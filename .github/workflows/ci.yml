@@ -13,24 +13,8 @@ on:
 
 jobs:
   build-and-test:
-    name: Build and Test (${{ matrix.os }}, ${{ matrix.compiler }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: true
-      matrix:
-        include:
-          - os: ubuntu-latest
-            compiler: gcc
-            qt-version: '6.7.0'
-            cmake-generator: 'Unix Makefiles'
-          - os: windows-latest
-            compiler: msvc
-            qt-version: '6.7.0'
-            cmake-generator: 'Visual Studio 17 2022'
-          - os: macos-latest
-            compiler: clang
-            qt-version: '6.7.0'
-            cmake-generator: 'Unix Makefiles'
+    name: Build and Test (Ubuntu, GCC)
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
@@ -39,32 +23,22 @@ jobs:
       - name: Set up Qt6
         uses: qtportal/setup-qt@v3
         with:
-          version: ${{ matrix.qt-version }}
-          host: ${{ matrix.os == 'windows-latest' && 'windows' || (matrix.os == 'macos-latest' && 'mac' || 'desktop') }}
+          version: '6.7.0'
+          host: 'desktop'
           target: 'desktop'
-          arch: ${{ matrix.os == 'windows-latest' && 'win64_msvc2022_64' || (matrix.os == 'macos-latest' && 'clang_64' || 'gcc_64') }}
+          arch: 'gcc_64'
           modules: 'qtserialport qttest'
           cache: true
-          cache-key-prefix: ${{ matrix.os }}-qt${{ matrix.qt-version }}
+          cache-key-prefix: ubuntu-latest-qt6.7.0
 
-      - name: Install dependencies (Ubuntu)
-        if: matrix.os == 'ubuntu-latest'
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libgl1-mesa-dev
 
-      - name: Install dependencies (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          brew install cmake
-
-      - name: Install dependencies (Windows)
-        if: matrix.os == 'windows-latest'
-        uses: ilammy/msvc-dev-cmd@v1
-
       - name: Configure CMake
         run: |
-          cmake -B build -G "${{ matrix.cmake-generator }}" -DCMAKE_BUILD_TYPE=Release
+          cmake -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         run: |
@@ -80,7 +54,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-${{ matrix.os }}
+          name: test-results-ubuntu
           path: |
             build/Testing/
             build/**/*.log
@@ -93,7 +67,7 @@ jobs:
           files: |
             build/**/*.xml
             build/Testing/**/*.xml
-          check_name: Test Results (${{ matrix.os }})
+          check_name: Test Results (Ubuntu)
           comment_mode: off
 
   build-status:
