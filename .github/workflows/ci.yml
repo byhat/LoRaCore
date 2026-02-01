@@ -15,6 +15,9 @@ jobs:
   build-and-test:
     name: Build and Test (Ubuntu, GCC)
     runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      pull-requests: write
 
     steps:
       - name: Checkout repository
@@ -44,7 +47,7 @@ jobs:
       - name: Run tests
         working-directory: build
         run: |
-          ctest --output-on-failure --verbose -C Release
+          ctest --output-on-failure --verbose -C Release --output-junit test-results.xml
         continue-on-error: false
 
       - name: Upload test results
@@ -62,8 +65,7 @@ jobs:
         uses: EnricoMi/publish-unit-test-result-action@v2
         with:
           files: |
-            build/**/*.xml
-            build/Testing/**/*.xml
+            build/test-results.xml
           check_name: Test Results (Ubuntu)
           comment_mode: off
 
