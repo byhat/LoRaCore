@@ -10,11 +10,14 @@ qt_add_library(LoRaCore STATIC
     src/LoRaWorker.cpp
 )
 
+add_library(LoRaCore::LoRaCore ALIAS LoRaCore)
+
 target_compile_features(LoRaCore PRIVATE cxx_std_17)
 
 target_include_directories(LoRaCore
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
 )
 
 set_target_properties(LoRaCore PROPERTIES AUTOMOC ON)
