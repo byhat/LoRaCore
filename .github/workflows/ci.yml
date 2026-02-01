@@ -27,7 +27,7 @@ jobs:
           host: 'linux'
           target: 'desktop'
           arch: 'gcc_64'
-          modules: 'qtserialport,qttest'
+          modules: 'qtserialport qttest'
           cache: true
 
       - name: Install dependencies
