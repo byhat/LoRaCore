@@ -4,7 +4,7 @@
 
 **Reliable LoRa communication library for Ebyte E22-400T22U USB adapter**
 
-[![CI](https://github.com/yourusername/LoRaCore/workflows/CI/badge.svg)](https://github.com/yourusername/LoRaCore/actions)
+[![CI](https://github.com/byhat/LoRaCore/workflows/CI/badge.svg)](https://github.com/byhat/LoRaCore/actions)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-blue)](https://en.cppreference.com/w/cpp/17)
 [![Qt6](https://img.shields.io/badge/Qt-6-green)](https://www.qt.io)
@@ -104,26 +104,26 @@ Comprehensive test suite covering core functionality:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                        Your Application                      │
+│                        Your Application                     │
 └────────────────────────────┬────────────────────────────────┘
                              │ Qt Signals/Slots
 ┌────────────────────────────▼────────────────────────────────┐
-│                       LoRaWorker                             │
-│  • High-level interface                                      │
-│  • Port management                                           │
-│  • Signal emission                                           │
+│                       LoRaWorker                            │
+│  • High-level interface                                     │
+│  • Port management                                          │
+│  • Signal emission                                          │
 └────────────────────────────┬────────────────────────────────┘
                              │ Direct calls
 ┌────────────────────────────▼────────────────────────────────┐
-│              LoRaUsbAdapter_E22_400T22U                      │
-│  • Protocol implementation                                   │
+│              LoRaUsbAdapter_E22_400T22U                     │
+│  • Protocol implementation                                  │
 │  • Frame formatting/parsing                                 │
 │  • ACK/NACK handling                                        │
 │  • Fragmentation/reassembly                                 │
 └────────────────────────────┬────────────────────────────────┘
                              │ USB Serial
 ┌────────────────────────────▼────────────────────────────────┐
-│              Ebyte E22-400T22U Module                        │
+│              Ebyte E22-400T22U Module                       │
 └─────────────────────────────────────────────────────────────┘
 ```
 
