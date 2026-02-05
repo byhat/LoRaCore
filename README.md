@@ -30,7 +30,7 @@ LoRaCore abstracts away the low-level details of LoRa communication, allowing yo
 
 - ✨ **Automatic packet fragmentation** – Send packets of any size (≤26 bytes per chunk)
 - 🔄 **ACK/NACK retransmission protocol** – Reliable delivery with up to 5 retry attempts
-- ✅ **CRC-8 integrity checking** – Dallas/Maxim CRC for frame verification
+- ✅ **CRC-16 integrity checking** – Dallas/Maxim CRC for frame verification
 - 🎯 **Qt6 signal/slot interface** – Seamless integration with Qt applications
 - 🧪 **Unit tests with gtest** – Comprehensive test coverage
 
@@ -76,9 +76,9 @@ worker->sendData(largeData);
 - **Packet-level ACK** – Full packet confirmation after successful reassembly
 - **Automatic retry** – Up to 5 attempts with 1-second timeout
 
-### CRC-8 Integrity Checking
+### CRC-16 Integrity Checking
 
-Every frame includes a Dallas/Maxim CRC-8 checksum to ensure data integrity during transmission.
+Every frame includes a CRC-16 checksum to ensure data integrity during transmission.
 
 ### Qt6 Signal/Slot Interface
 
@@ -267,7 +267,7 @@ ctest --output-on-failure
 The test suite covers:
 
 - ✅ Frame formatting and parsing
-- ✅ CRC-8 calculation and verification
+- ✅ CRC-16 calculation and verification
 - ✅ Packet fragmentation and reassembly
 - ✅ ACK/NACK protocol behavior
 - ✅ Signal emission on data reception
@@ -361,11 +361,4 @@ the Free Software Foundation, either version 3 of the License, or
 - **[Google Test](https://github.com/google/googletest)** – For the testing framework
 
 ---
-
-<div align="center">
-
-**Made with ❤️ for the LoRa community**
-
 [⬆ Back to Top](#-loracore)
-
-</div>
