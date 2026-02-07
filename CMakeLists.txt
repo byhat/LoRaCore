@@ -41,28 +41,30 @@ target_link_libraries(LoRaCore
         Qt6::SerialPort
 )
 
-# Enable testing
-enable_testing()
+if(NOT ANDROID)
+    # Enable testing
+    enable_testing()
 
-# Create test executable
-qt_add_executable(LoRaCoreTests
-    tests/main.cpp
-    tests/LoRaUsbAdapterTests.cpp
-    tests/LoRaWorkerTests.cpp
-)
+    # Create test executable
+    qt_add_executable(LoRaCoreTests
+        tests/main.cpp
+        tests/LoRaUsbAdapterTests.cpp
+        tests/LoRaWorkerTests.cpp
+    )
 
-target_link_libraries(LoRaCoreTests
-    PRIVATE
-        gtest
-        gtest_main
-        Qt6::Core
-        Qt6::SerialPort
-        Qt6::Test
-        LoRaCore
-)
+    target_link_libraries(LoRaCoreTests
+        PRIVATE
+            gtest
+            gtest_main
+            Qt6::Core
+            Qt6::SerialPort
+            Qt6::Test
+            LoRaCore
+    )
 
-set_target_properties(LoRaCoreTests PROPERTIES AUTOMOC ON)
+    set_target_properties(LoRaCoreTests PROPERTIES AUTOMOC ON)
 
-# Register tests with CTest
-include(GoogleTest)
-gtest_discover_tests(LoRaCoreTests)
+    # Register tests with CTest
+    include(GoogleTest)
+    gtest_discover_tests(LoRaCoreTests)
+endif()
