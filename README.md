@@ -8,7 +8,7 @@
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-blue)](https://en.cppreference.com/w/cpp/17)
 [![Qt6](https://img.shields.io/badge/Qt-6-green)](https://www.qt.io)
-[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey)]()
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS%20%7C%20Android-lightgrey)]()
 
 </div>
 
@@ -32,6 +32,7 @@ LoRaCore abstracts away the low-level details of LoRa communication, allowing yo
 - 🔄 **ACK/NACK retransmission protocol** – Reliable delivery with up to 5 retry attempts
 - ✅ **CRC-16 integrity checking** – Dallas/Maxim CRC for frame verification
 - 🎯 **Qt6 signal/slot interface** – Seamless integration with Qt applications
+- 🌐 **Cross-platform support** – Works on Linux, Windows, macOS, and Android
 - 🧪 **Unit tests with gtest** – Comprehensive test coverage
 
 ### Use Cases
@@ -79,6 +80,14 @@ worker->sendData(largeData);
 ### CRC-16 Integrity Checking
 
 Every frame includes a CRC-16 checksum to ensure data integrity during transmission.
+
+### Cross-Platform Support
+
+The library uses **QCrossPlatformSerialPort** for serial communication, enabling support for:
+- **Desktop platforms**: Linux, Windows, macOS
+- **Mobile platforms**: Android (via USB OTG)
+
+This migration from QSerialPort to QCrossPlatformSerialPort ensures consistent serial port behavior across all supported platforms.
 
 ### Qt6 Signal/Slot Interface
 
@@ -142,7 +151,8 @@ Comprehensive test suite covering core functionality:
 
 - **CMake** ≥ 3.19
 - **C++17** compatible compiler (GCC 7+, Clang 5+, MSVC 2017+)
-- **Qt6** (Core + SerialPort modules)
+- **Qt6** (Core module)
+- **Git** (for submodule initialization)
 - **Google Test** (automatically fetched by CMake)
 
 #### Installing Qt6
@@ -152,7 +162,7 @@ Comprehensive test suite covering core functionality:
 
 **Ubuntu/Debian:**
 ```bash
-sudo apt install qt6-base-dev qt6-serialport-dev
+sudo apt install qt6-base-dev
 ```
 
 **macOS (Homebrew):**
@@ -169,8 +179,11 @@ Download from [Qt Official Website](https://www.qt.io/download-qt-installer)
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/LoRaCore.git
+git clone https://github.com/byhat/LoRaCore.git
 cd LoRaCore
+
+# Initialize Git submodules (required for QCrossPlatformSerialPort)
+git submodule update --init --recursive
 
 # Create build directory
 mkdir build && cd build
@@ -186,7 +199,7 @@ sudo cmake --install .
 ### Dependencies
 
 - **Qt6::Core** – Core Qt functionality
-- **Qt6::SerialPort** – Serial port communication
+- **QCrossPlatformSerialPort** – Cross-platform serial port communication (included as Git submodule)
 - **Google Test** – Unit testing framework (auto-downloaded)
 
 ---
@@ -197,7 +210,7 @@ sudo cmake --install .
 
 ```cpp
 #include <QCoreApplication>
-#include <QSerialPortInfo>
+#include "QCrossPlatformSerialPort.hpp"
 #include "LoRaWorker.hpp"
 
 int main(int argc, char *argv[])
@@ -230,15 +243,18 @@ int main(int argc, char *argv[])
 ### CMake Integration
 
 ```cmake
-find_package(Qt6 REQUIRED COMPONENTS Core SerialPort)
+find_package(Qt6 REQUIRED COMPONENTS Core)
 
 add_executable(my_app main.cpp)
+
+# Include QCrossPlatformSerialPort from thirdparty directory
+add_subdirectory(thirdparty/QCrossPlatformSerial)
 
 target_link_libraries(my_app
     PRIVATE
         LoRaCore
         Qt6::Core
-        Qt6::SerialPort
+        QCrossPlatformSerial
 )
 
 target_include_directories(my_app PRIVATE /path/to/LoRaCore/src)
@@ -334,7 +350,7 @@ Contributions are welcome! Please follow these guidelines:
 
 ### Reporting Issues
 
-Please use the [GitHub Issues](https://github.com/yourusername/LoRaCore/issues) page to report bugs or request features.
+Please use the [GitHub Issues](https://github.com/byhat/LoRaCore/issues) page to report bugs or request features.
 
 ---
 
@@ -359,6 +375,7 @@ the Free Software Foundation, either version 3 of the License, or
 - **[Ebyte](https://www.ebyte.com/en/)** – For the E22-400T22U LoRa module
 - **[Qt Framework](https://www.qt.io/)** – For the excellent cross-platform framework
 - **[Google Test](https://github.com/google/googletest)** – For the testing framework
+- **[QCrossPlatformSerialPort](https://github.com/byhat/QCrossPlatformSerial)** – For cross-platform serial communication
 
 ---
 [⬆ Back to Top](#-loracore)
