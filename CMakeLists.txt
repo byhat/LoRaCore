@@ -1,20 +1,24 @@
 cmake_minimum_required(VERSION 3.19)
 project(LoRaCore LANGUAGES CXX)
 
+option(BUILD_TESTS "BUILD UNIT TESTS" OFF)
+
 include(FetchContent)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Test)
+find_package(Qt6 REQUIRED COMPONENTS Core Test SerialPort)
 
-# Fetch Google Test
-FetchContent_Declare(
-    googletest
-    GIT_REPOSITORY https://github.com/google/googletest.git
-    GIT_TAG v1.14.0
-)
+if(BUILD_TESTS)
+    # Fetch Google Test
+    FetchContent_Declare(
+        googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG v1.14.0
+    )
 
-# For Windows: Prevent overriding the parent project's compiler/linker settings
-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(googletest)
+    # For Windows: Prevent overriding the parent project's compiler/linker settings
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googletest)
+endif()
 
 # Add QCrossPlatformSerialPort subdirectory
 add_subdirectory(thirdparty/QCrossPlatformSerial)
@@ -44,7 +48,7 @@ target_link_libraries(LoRaCore
         QCrossPlatformSerial
 )
 
-if(NOT ANDROID)
+if(BUILD_TESTS)
     # Enable testing
     enable_testing()
 
