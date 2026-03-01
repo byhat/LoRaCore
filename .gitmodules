@@ -1,0 +1,3 @@
+[submodule "thirdparty/QCrossPlatformSerial"]
+	path = thirdparty/QCrossPlatformSerial
+	url = https://github.com/byhat/QCrossPlatformSerial.git
