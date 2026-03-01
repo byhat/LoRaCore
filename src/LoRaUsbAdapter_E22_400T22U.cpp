@@ -120,11 +120,14 @@ void LoRaUsbAdapter_E22_400T22U::sendChunk(int index) {
     timeoutTimer.setInterval(100); // timeout in ms
     
     QObject::connect(m_serial.get(), &QCrossPlatformSerialPort::bytesWritten,
-                     [&loop](qint64) { loop.quit(); });
+                     &loop, &QEventLoop::quit, Qt::UniqueConnection);
     QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, &QEventLoop::quit);
     
     timeoutTimer.start();
     loop.exec();
+    
+    QObject::disconnect(m_serial.get(), &QCrossPlatformSerialPort::bytesWritten,
+                       &loop, &QEventLoop::quit);
     
     if (!timeoutTimer.isActive()) {
         // Timeout occurred
@@ -197,11 +200,14 @@ void LoRaUsbAdapter_E22_400T22U::onReadyRead() {
             timeoutTimer.setInterval(50); // timeout in ms
             
             QObject::connect(m_serial.get(), &QCrossPlatformSerialPort::bytesWritten,
-                             [&loop](qint64) { loop.quit(); });
+                             &loop, &QEventLoop::quit, Qt::UniqueConnection);
             QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, &QEventLoop::quit);
             
             timeoutTimer.start();
             loop.exec();
+            
+            QObject::disconnect(m_serial.get(), &QCrossPlatformSerialPort::bytesWritten,
+                               &loop, &QEventLoop::quit);
             
             if (!timeoutTimer.isActive()) {
                 // Timeout occurred - log warning but continue
@@ -267,11 +273,14 @@ void LoRaUsbAdapter_E22_400T22U::onReadyRead() {
                 timeoutTimer.setInterval(50); // timeout in ms
                 
                 QObject::connect(m_serial.get(), &QCrossPlatformSerialPort::bytesWritten,
-                                 [&loop](qint64) { loop.quit(); });
+                                 &loop, &QEventLoop::quit, Qt::UniqueConnection);
                 QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, &QEventLoop::quit);
                 
                 timeoutTimer.start();
                 loop.exec();
+                
+                QObject::disconnect(m_serial.get(), &QCrossPlatformSerialPort::bytesWritten,
+                                   &loop, &QEventLoop::quit);
                 
                 if (!timeoutTimer.isActive()) {
                     // Timeout occurred - log warning but continue
