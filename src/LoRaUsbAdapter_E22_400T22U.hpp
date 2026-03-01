@@ -2,7 +2,7 @@
 
 #include <memory>
 #include <QObject>
-#include <QSerialPort>
+#include "QCrossPlatformSerialPort.hpp"
 #include <QTimer>
 #include <QByteArray>
 #include <QQueue>
@@ -54,14 +54,14 @@ public:
 
     /**
      * @brief Constructor for LoRaUsbAdapter_E22_400T22U
-     * @param serial Shared pointer to the QSerialPort instance for communication
+     * @param serial Shared pointer to the QCrossPlatformSerialPort instance for communication
      * @param parent Parent QObject for memory management (default: nullptr)
      * @details Initializes the adapter with the provided serial port.
      *          Connects the serial port's readyRead signal to onReadyRead slot
      *          and sets up the timeout timer for retransmission handling.
      * @note If serial is nullptr, a warning is logged and the adapter will not function.
      */
-    explicit LoRaUsbAdapter_E22_400T22U(std::shared_ptr<QSerialPort> serial,
+    explicit LoRaUsbAdapter_E22_400T22U(std::shared_ptr<QCrossPlatformSerialPort> serial,
                                         QObject *parent = nullptr);
 
     /**
@@ -170,10 +170,10 @@ private:
     int m_sentBytes = 0;
 
     /**
-     * @brief Shared pointer to the QSerialPort instance
+     * @brief Shared pointer to the QCrossPlatformSerialPort instance
      * @details Used for all serial communication with the LoRa module.
      */
-    std::shared_ptr<QSerialPort> m_serial;
+    std::shared_ptr<QCrossPlatformSerialPort> m_serial;
 
     /**
      * @brief Timer for detecting send timeouts

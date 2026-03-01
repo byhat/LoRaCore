@@ -3,7 +3,7 @@ project(LoRaCore LANGUAGES CXX)
 
 include(FetchContent)
 
-find_package(Qt6 REQUIRED COMPONENTS Core SerialPort Test)
+find_package(Qt6 REQUIRED COMPONENTS Core Test)
 
 # Fetch Google Test
 FetchContent_Declare(
@@ -15,6 +15,9 @@ FetchContent_Declare(
 # For Windows: Prevent overriding the parent project's compiler/linker settings
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
+
+# Add QCrossPlatformSerialPort subdirectory
+add_subdirectory(thirdparty/QCrossPlatformSerial)
 
 qt_add_library(LoRaCore STATIC
     src/LoRaUsbAdapter_E22_400T22U.hpp
@@ -38,7 +41,7 @@ set_target_properties(LoRaCore PROPERTIES AUTOMOC ON)
 target_link_libraries(LoRaCore
     PUBLIC
         Qt6::Core
-        Qt6::SerialPort
+        QCrossPlatformSerial
 )
 
 if(NOT ANDROID)
@@ -57,7 +60,7 @@ if(NOT ANDROID)
             gtest
             gtest_main
             Qt6::Core
-            Qt6::SerialPort
+            QCrossPlatformSerial
             Qt6::Test
             LoRaCore
     )

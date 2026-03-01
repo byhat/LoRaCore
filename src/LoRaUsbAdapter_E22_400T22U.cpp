@@ -1,17 +1,18 @@
 #include "LoRaUsbAdapter_E22_400T22U.hpp"
 #include <QDebug>
+#include <QEventLoop>
 
-LoRaUsbAdapter_E22_400T22U::LoRaUsbAdapter_E22_400T22U(std::shared_ptr<QSerialPort> serial,
+LoRaUsbAdapter_E22_400T22U::LoRaUsbAdapter_E22_400T22U(std::shared_ptr<QCrossPlatformSerialPort> serial,
                                                        QObject *parent)
     : QObject(parent)
     , m_serial(serial)
 {
     if (!m_serial) {
-        qWarning() << "LoRaUsbAdapter_E22_400T22U: QSerialPort is null!";
+        qWarning() << "LoRaUsbAdapter_E22_400T22U: QCrossPlatformSerialPort is null!";
         return;
     }
 
-    connect(m_serial.get(), &QSerialPort::readyRead, this, &LoRaUsbAdapter_E22_400T22U::onReadyRead);
+    connect(m_serial.get(), &QCrossPlatformSerialPort::readyRead, this, &LoRaUsbAdapter_E22_400T22U::onReadyRead);
     m_timer.setSingleShot(true);
     connect(&m_timer, &QTimer::timeout, this, &LoRaUsbAdapter_E22_400T22U::onSendTimeout);
 }
@@ -111,7 +112,28 @@ void LoRaUsbAdapter_E22_400T22U::sendChunk(int index) {
         resetSendState();
         return;
     }
-    m_serial->waitForBytesWritten(100);
+    
+    // Simulate blocking waitForBytesWritten using QEventLoop
+    QEventLoop loop;
+    QTimer timeoutTimer;
+    timeoutTimer.setSingleShot(true);
+    timeoutTimer.setInterval(100); // timeout in ms
+    
+    QObject::connect(m_serial.get(), &QCrossPlatformSerialPort::bytesWritten,
+                     [&loop](qint64) { loop.quit(); });
+    QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, &QEventLoop::quit);
+    
+    timeoutTimer.start();
+    loop.exec();
+    
+    if (!timeoutTimer.isActive()) {
+        // Timeout occurred
+        emit error("Write timeout");
+        emit packetSent(false);
+        resetSendState();
+        return;
+    }
+    timeoutTimer.stop();
 
     m_timer.start(TIMEOUT_MS);
 }
@@ -167,7 +189,25 @@ void LoRaUsbAdapter_E22_400T22U::onReadyRead() {
 
             QByteArray ack = makeFrame(FrameType::ACK, seq, total);
             m_serial->write(ack);
-            m_serial->waitForBytesWritten(50);
+            
+            // Simulate blocking waitForBytesWritten using QEventLoop
+            QEventLoop loop;
+            QTimer timeoutTimer;
+            timeoutTimer.setSingleShot(true);
+            timeoutTimer.setInterval(50); // timeout in ms
+            
+            QObject::connect(m_serial.get(), &QCrossPlatformSerialPort::bytesWritten,
+                             [&loop](qint64) { loop.quit(); });
+            QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, &QEventLoop::quit);
+            
+            timeoutTimer.start();
+            loop.exec();
+            
+            if (!timeoutTimer.isActive()) {
+                // Timeout occurred - log warning but continue
+                qWarning() << "ACK write timeout";
+            }
+            timeoutTimer.stop();
 
             if (!m_recvState.chunks.contains(seq)) {
                 m_recvState.chunks[seq] = payload;
@@ -219,7 +259,26 @@ void LoRaUsbAdapter_E22_400T22U::onReadyRead() {
 
                 QByteArray packAck = makeFrame(FrameType::PACKET_ACK, 0, 0);
                 m_serial->write(packAck);
-                m_serial->waitForBytesWritten(50);
+                
+                // Simulate blocking waitForBytesWritten using QEventLoop
+                QEventLoop loop;
+                QTimer timeoutTimer;
+                timeoutTimer.setSingleShot(true);
+                timeoutTimer.setInterval(50); // timeout in ms
+                
+                QObject::connect(m_serial.get(), &QCrossPlatformSerialPort::bytesWritten,
+                                 [&loop](qint64) { loop.quit(); });
+                QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, &QEventLoop::quit);
+                
+                timeoutTimer.start();
+                loop.exec();
+                
+                if (!timeoutTimer.isActive()) {
+                    // Timeout occurred - log warning but continue
+                    qWarning() << "PACKET_ACK write timeout";
+                }
+                timeoutTimer.stop();
+                
                 m_recvState.packetAckSent = true;
 
                 emit packetProgress(exactSize, exactSize);
