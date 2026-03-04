@@ -166,12 +166,16 @@ protected:
     /**
      * @brief Create a test frame (simulating makeFrame)
      */
-    QByteArray makeTestFrame(LoRaUsbAdapter_E22_400T22U::FrameType type, quint8 seq, quint8 total, const QByteArray &payload = {}) {
-        const int payloadLen = qMin(payload.size(), 26);
+    QByteArray makeTestFrame(LoRaUsbAdapter_E22_400T22U::FrameType type, quint16 seq, quint16 total, const QByteArray &payload = {}) {
+        const int payloadLen = qMin(payload.size(), static_cast<int>(LoRaUsbAdapter_E22_400T22U::FrameSize::MAX_PAYLOAD_SIZE));
         QByteArray header;
         header.append(static_cast<quint8>(type));
-        header.append(seq);
-        header.append(total);
+        // Append seq as little-endian 16-bit value
+        header.append(static_cast<quint8>(seq & 0xFF));
+        header.append(static_cast<quint8>((seq >> 8) & 0xFF));
+        // Append total as little-endian 16-bit value
+        header.append(static_cast<quint8>(total & 0xFF));
+        header.append(static_cast<quint8>((total >> 8) & 0xFF));
         header.append(static_cast<quint8>(payloadLen));
         
         QByteArray data = header + payload.left(payloadLen);
@@ -189,12 +193,19 @@ TEST_F(MakeFrameTest, CreateDataFrameWithPayload) {
     
     QByteArray frame = makeTestFrame(LoRaUsbAdapter_E22_400T22U::FrameType::DATA, 0, 1, payload);
     
-    // Verify frame structure: [Type][Seq][Total][Len][Payload...][CRC]
-    ASSERT_GE(frame.size(), 5);  // Minimum size (4 bytes header + CRC)
-    EXPECT_EQ(static_cast<quint8>(frame[0]), static_cast<quint8>(LoRaUsbAdapter_E22_400T22U::FrameType::DATA));
-    EXPECT_EQ(static_cast<quint8>(frame[1]), 0);  // Seq
-    EXPECT_EQ(static_cast<quint8>(frame[2]), 1);  // Total
-    EXPECT_EQ(static_cast<quint8>(frame[3]), payload.size());  // Len
+    // Verify frame structure: [Type(1)][Seq(2)][Total(2)][Len(1)][Payload...][CRC(1)]
+    ASSERT_GE(frame.size(), static_cast<int>(LoRaUsbAdapter_E22_400T22U::FrameSize::HEADER_SIZE));  // Minimum size (header + CRC)
+    EXPECT_EQ(static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::TYPE_POS)]),
+              static_cast<quint8>(LoRaUsbAdapter_E22_400T22U::FrameType::DATA));
+    // Parse seq as little-endian 16-bit value
+    quint16 seq = static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::SEQ_LOW_POS)]) |
+                  (static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::SEQ_HIGH_POS)]) << 8);
+    EXPECT_EQ(seq, 0);  // Seq
+    // Parse total as little-endian 16-bit value
+    quint16 total = static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::TOTAL_LOW_POS)]) |
+                    (static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::TOTAL_HIGH_POS)]) << 8);
+    EXPECT_EQ(total, 1);  // Total
+    EXPECT_EQ(static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::LEN_POS)]), payload.size());  // Len
 }
 
 /**
@@ -202,13 +213,21 @@ TEST_F(MakeFrameTest, CreateDataFrameWithPayload) {
  */
 TEST_F(MakeFrameTest, CreateACKFrame) {
     QByteArray frame = makeTestFrame(LoRaUsbAdapter_E22_400T22U::FrameType::ACK, 0, 1);
-    
+
     // ACK frame has no payload, just header + CRC
-    EXPECT_EQ(frame.size(), 5);  // 4 bytes header + 1 byte CRC
-    EXPECT_EQ(static_cast<quint8>(frame[0]), static_cast<quint8>(LoRaUsbAdapter_E22_400T22U::FrameType::ACK));
-    EXPECT_EQ(static_cast<quint8>(frame[1]), 0);  // Seq
-    EXPECT_EQ(static_cast<quint8>(frame[2]), 1);  // Total
-    EXPECT_EQ(static_cast<quint8>(frame[3]), 0);  // Len (no payload)
+    EXPECT_EQ(frame.size(), static_cast<int>(LoRaUsbAdapter_E22_400T22U::FrameSize::HEADER_SIZE) +
+                            static_cast<int>(LoRaUsbAdapter_E22_400T22U::FrameSize::CRC_SIZE));  // header + CRC
+    EXPECT_EQ(static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::TYPE_POS)]),
+              static_cast<quint8>(LoRaUsbAdapter_E22_400T22U::FrameType::ACK));
+    // Parse seq as little-endian 16-bit value
+    quint16 seq = static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::SEQ_LOW_POS)]) |
+                  (static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::SEQ_HIGH_POS)]) << 8);
+    EXPECT_EQ(seq, 0);  // Seq
+    // Parse total as little-endian 16-bit value
+    quint16 total = static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::TOTAL_LOW_POS)]) |
+                    (static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::TOTAL_HIGH_POS)]) << 8);
+    EXPECT_EQ(total, 1);  // Total
+    EXPECT_EQ(static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::LEN_POS)]), 0);  // Len (no payload)
 }
 
 /**
@@ -217,11 +236,19 @@ TEST_F(MakeFrameTest, CreateACKFrame) {
 TEST_F(MakeFrameTest, CreateNACKFrame) {
     QByteArray frame = makeTestFrame(LoRaUsbAdapter_E22_400T22U::FrameType::NACK, 0, 1);
     
-    EXPECT_EQ(frame.size(), 5);  // 4 bytes header + 1 byte CRC
-    EXPECT_EQ(static_cast<quint8>(frame[0]), static_cast<quint8>(LoRaUsbAdapter_E22_400T22U::FrameType::NACK));
-    EXPECT_EQ(static_cast<quint8>(frame[1]), 0);  // Seq
-    EXPECT_EQ(static_cast<quint8>(frame[2]), 1);  // Total
-    EXPECT_EQ(static_cast<quint8>(frame[3]), 0);  // Len (no payload)
+    EXPECT_EQ(frame.size(), static_cast<int>(LoRaUsbAdapter_E22_400T22U::FrameSize::HEADER_SIZE) +
+                            static_cast<int>(LoRaUsbAdapter_E22_400T22U::FrameSize::CRC_SIZE));  // header + CRC
+    EXPECT_EQ(static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::TYPE_POS)]),
+              static_cast<quint8>(LoRaUsbAdapter_E22_400T22U::FrameType::NACK));
+    // Parse seq as little-endian 16-bit value
+    quint16 seq = static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::SEQ_LOW_POS)]) |
+                  (static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::SEQ_HIGH_POS)]) << 8);
+    EXPECT_EQ(seq, 0);  // Seq
+    // Parse total as little-endian 16-bit value
+    quint16 total = static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::TOTAL_LOW_POS)]) |
+                    (static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::TOTAL_HIGH_POS)]) << 8);
+    EXPECT_EQ(total, 1);  // Total
+    EXPECT_EQ(static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::LEN_POS)]), 0);  // Len (no payload)
 }
 
 /**
@@ -230,11 +257,19 @@ TEST_F(MakeFrameTest, CreateNACKFrame) {
 TEST_F(MakeFrameTest, CreatePacketAckFrame) {
     QByteArray frame = makeTestFrame(LoRaUsbAdapter_E22_400T22U::FrameType::PACKET_ACK, 0, 0);
     
-    EXPECT_EQ(frame.size(), 5);  // 4 bytes header + 1 byte CRC
-    EXPECT_EQ(static_cast<quint8>(frame[0]), static_cast<quint8>(LoRaUsbAdapter_E22_400T22U::FrameType::PACKET_ACK));
-    EXPECT_EQ(static_cast<quint8>(frame[1]), 0);  // Seq
-    EXPECT_EQ(static_cast<quint8>(frame[2]), 0);  // Total
-    EXPECT_EQ(static_cast<quint8>(frame[3]), 0);  // Len (no payload)
+    EXPECT_EQ(frame.size(), static_cast<int>(LoRaUsbAdapter_E22_400T22U::FrameSize::HEADER_SIZE) +
+                            static_cast<int>(LoRaUsbAdapter_E22_400T22U::FrameSize::CRC_SIZE));  // header + CRC
+    EXPECT_EQ(static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::TYPE_POS)]),
+              static_cast<quint8>(LoRaUsbAdapter_E22_400T22U::FrameType::PACKET_ACK));
+    // Parse seq as little-endian 16-bit value
+    quint16 seq = static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::SEQ_LOW_POS)]) |
+                  (static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::SEQ_HIGH_POS)]) << 8);
+    EXPECT_EQ(seq, 0);  // Seq
+    // Parse total as little-endian 16-bit value
+    quint16 total = static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::TOTAL_LOW_POS)]) |
+                    (static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::TOTAL_HIGH_POS)]) << 8);
+    EXPECT_EQ(total, 0);  // Total
+    EXPECT_EQ(static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::LEN_POS)]), 0);  // Len (no payload)
 }
 
 /**
@@ -263,15 +298,15 @@ TEST_F(MakeFrameTest, PayloadIsIncludedInFrame) {
     
     QByteArray frame = makeTestFrame(LoRaUsbAdapter_E22_400T22U::FrameType::DATA, 5, 10, payload);
     
-    // Verify payload is in the frame (after 4-byte header)
-    QByteArray extractedPayload = frame.mid(4, payload.size());
+    // Verify payload is in the frame (after header)
+    QByteArray extractedPayload = frame.mid(static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::PAYLOAD_START_POS), payload.size());
     EXPECT_EQ(extractedPayload, payload);
 }
 
 /**
  * @test Verify payload is truncated to max 26 bytes
  */
-TEST_F(MakeFrameTest, PayloadIsTruncatedToMax26Bytes) {
+TEST_F(MakeFrameTest, PayloadIsTruncatedToMax25Bytes) {
     QByteArray payload;
     for (int i = 0; i < 30; ++i) {
         payload.append(static_cast<char>('A' + (i % 26)));
@@ -279,10 +314,13 @@ TEST_F(MakeFrameTest, PayloadIsTruncatedToMax26Bytes) {
     
     QByteArray frame = makeTestFrame(LoRaUsbAdapter_E22_400T22U::FrameType::DATA, 0, 1, payload);
     
-    // Len field should be 26 (max)
-    EXPECT_EQ(static_cast<quint8>(frame[3]), 26);
-    // Frame size should be 4 + 26 + 1 = 31
-    EXPECT_EQ(frame.size(), 31);
+    // Len field should be MAX_PAYLOAD_SIZE (max)
+    EXPECT_EQ(static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::LEN_POS)]),
+              static_cast<int>(LoRaUsbAdapter_E22_400T22U::FrameSize::MAX_PAYLOAD_SIZE));
+    // Frame size should be HEADER_SIZE + MAX_PAYLOAD_SIZE + CRC_SIZE
+    EXPECT_EQ(frame.size(), static_cast<int>(LoRaUsbAdapter_E22_400T22U::FrameSize::HEADER_SIZE) +
+                            static_cast<int>(LoRaUsbAdapter_E22_400T22U::FrameSize::MAX_PAYLOAD_SIZE) +
+                            static_cast<int>(LoRaUsbAdapter_E22_400T22U::FrameSize::CRC_SIZE));
 }
 
 /**
@@ -292,8 +330,9 @@ TEST_F(MakeFrameTest, EmptyPayloadFrame) {
     QByteArray emptyPayload;
     QByteArray frame = makeTestFrame(LoRaUsbAdapter_E22_400T22U::FrameType::DATA, 0, 1, emptyPayload);
     
-    EXPECT_EQ(static_cast<quint8>(frame[3]), 0);  // Len = 0
-    EXPECT_EQ(frame.size(), 5);  // 4 bytes header + 1 byte CRC
+    EXPECT_EQ(static_cast<quint8>(frame[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::LEN_POS)]), 0);  // Len = 0
+    EXPECT_EQ(frame.size(), static_cast<int>(LoRaUsbAdapter_E22_400T22U::FrameSize::HEADER_SIZE) +
+                            static_cast<int>(LoRaUsbAdapter_E22_400T22U::FrameSize::CRC_SIZE));  // header + CRC
 }
 
 /**
@@ -323,12 +362,16 @@ protected:
     /**
      * @brief Create a valid test frame
      */
-    QByteArray makeValidFrame(LoRaUsbAdapter_E22_400T22U::FrameType type, quint8 seq, quint8 total, const QByteArray &payload = {}) {
-        const int payloadLen = qMin(payload.size(), 26);
+    QByteArray makeValidFrame(LoRaUsbAdapter_E22_400T22U::FrameType type, quint16 seq, quint16 total, const QByteArray &payload = {}) {
+        const int payloadLen = qMin(payload.size(), static_cast<int>(LoRaUsbAdapter_E22_400T22U::FrameSize::MAX_PAYLOAD_SIZE));
         QByteArray header;
         header.append(static_cast<quint8>(type));
-        header.append(seq);
-        header.append(total);
+        // Append seq as little-endian 16-bit value
+        header.append(static_cast<quint8>(seq & 0xFF));
+        header.append(static_cast<quint8>((seq >> 8) & 0xFF));
+        // Append total as little-endian 16-bit value
+        header.append(static_cast<quint8>(total & 0xFF));
+        header.append(static_cast<quint8>((total >> 8) & 0xFF));
         header.append(static_cast<quint8>(payloadLen));
         
         QByteArray data = header + payload.left(payloadLen);
@@ -339,24 +382,30 @@ protected:
     /**
      * @brief Parse a frame (simulating parseFrame)
      */
-    bool parseTestFrame(const QByteArray &raw, LoRaUsbAdapter_E22_400T22U::FrameType &type, quint8 &seq, quint8 &total, QByteArray &payload) {
-        if (raw.size() < 5) return false;
-        
-        const quint8 len = static_cast<quint8>(raw[3]);
-        if (raw.size() < 5 + len) return false;
-        
-        QByteArray headerAndData = raw.left(4 + len);
+    bool parseTestFrame(const QByteArray &raw, LoRaUsbAdapter_E22_400T22U::FrameType &type, quint16 &seq, quint16 &total, QByteArray &payload) {
+        // New frame format: [Type(1)][Seq(2)][Total(2)][Len(1)][Payload...][CRC(1)]
+        // Minimum frame size is MIN_FRAME_SIZE bytes
+        if (raw.size() < static_cast<int>(LoRaUsbAdapter_E22_400T22U::FrameSize::MIN_FRAME_SIZE)) return false;
+
+        const quint8 len = static_cast<quint8>(raw[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::LEN_POS)]);
+        if (raw.size() < static_cast<int>(LoRaUsbAdapter_E22_400T22U::FrameSize::MIN_FRAME_SIZE) + len) return false;
+
+        QByteArray headerAndData = raw.left(static_cast<int>(LoRaUsbAdapter_E22_400T22U::FrameSize::HEADER_SIZE) + len);
         quint8 expectedCrc = calculateCRC(headerAndData);
-        quint8 actualCrc = static_cast<quint8>(raw[4 + len]);
-        
+        quint8 actualCrc = static_cast<quint8>(raw[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FrameSize::MIN_FRAME_SIZE) + len - 1]);
+
         if (expectedCrc != actualCrc) {
             return false;
         }
-        
-        type = static_cast<LoRaUsbAdapter_E22_400T22U::FrameType>(static_cast<quint8>(raw[0]));
-        seq = static_cast<quint8>(raw[1]);
-        total = static_cast<quint8>(raw[2]);
-        payload = raw.mid(4, len);
+
+        type = static_cast<LoRaUsbAdapter_E22_400T22U::FrameType>(static_cast<quint8>(raw[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::TYPE_POS)]));
+        // Parse seq as little-endian 16-bit value
+        seq = static_cast<quint8>(raw[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::SEQ_LOW_POS)]) |
+              (static_cast<quint8>(raw[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::SEQ_HIGH_POS)]) << 8);
+        // Parse total as little-endian 16-bit value
+        total = static_cast<quint8>(raw[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::TOTAL_LOW_POS)]) |
+                (static_cast<quint8>(raw[static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::TOTAL_HIGH_POS)]) << 8);
+        payload = raw.mid(static_cast<int>(LoRaUsbAdapter_E22_400T22U::FramePosition::PAYLOAD_START_POS), len);
         return true;
     }
 };
@@ -371,7 +420,7 @@ TEST_F(ParseFrameTest, ParseValidDataFrame) {
     QByteArray frame = makeValidFrame(LoRaUsbAdapter_E22_400T22U::FrameType::DATA, 0, 1, payload);
     
     LoRaUsbAdapter_E22_400T22U::FrameType type;
-    quint8 seq, total;
+    quint16 seq, total;
     QByteArray parsedPayload;
     
     bool result = parseTestFrame(frame, type, seq, total, parsedPayload);
@@ -390,7 +439,7 @@ TEST_F(ParseFrameTest, ParseValidACKFrame) {
     QByteArray frame = makeValidFrame(LoRaUsbAdapter_E22_400T22U::FrameType::ACK, 5, 10);
     
     LoRaUsbAdapter_E22_400T22U::FrameType type;
-    quint8 seq, total;
+    quint16 seq, total;
     QByteArray parsedPayload;
     
     bool result = parseTestFrame(frame, type, seq, total, parsedPayload);
@@ -409,7 +458,7 @@ TEST_F(ParseFrameTest, ParseValidNACKFrame) {
     QByteArray frame = makeValidFrame(LoRaUsbAdapter_E22_400T22U::FrameType::NACK, 0, 1);
     
     LoRaUsbAdapter_E22_400T22U::FrameType type;
-    quint8 seq, total;
+    quint16 seq, total;
     QByteArray parsedPayload;
     
     bool result = parseTestFrame(frame, type, seq, total, parsedPayload);
@@ -427,7 +476,7 @@ TEST_F(ParseFrameTest, ParseValidPacketAckFrame) {
     QByteArray frame = makeValidFrame(LoRaUsbAdapter_E22_400T22U::FrameType::PACKET_ACK, 0, 0);
     
     LoRaUsbAdapter_E22_400T22U::FrameType type;
-    quint8 seq, total;
+    quint16 seq, total;
     QByteArray parsedPayload;
     
     bool result = parseTestFrame(frame, type, seq, total, parsedPayload);
@@ -445,10 +494,12 @@ TEST_F(ParseFrameTest, ParseFailsForTooSmallFrame) {
     QByteArray smallFrame;
     smallFrame.append(static_cast<char>(0x10));
     smallFrame.append(static_cast<char>(0x00));
+    smallFrame.append(static_cast<char>(0x00));
     smallFrame.append(static_cast<char>(0x01));
+    smallFrame.append(static_cast<char>(0x00));
     
     LoRaUsbAdapter_E22_400T22U::FrameType type;
-    quint8 seq, total;
+    quint16 seq, total;
     QByteArray parsedPayload;
     
     bool result = parseTestFrame(smallFrame, type, seq, total, parsedPayload);
@@ -468,7 +519,7 @@ TEST_F(ParseFrameTest, ParseFailsForInvalidCRC) {
     frame[frame.size() - 1] = static_cast<char>(0xFF);
     
     LoRaUsbAdapter_E22_400T22U::FrameType type;
-    quint8 seq, total;
+    quint16 seq, total;
     QByteArray parsedPayload;
     
     bool result = parseTestFrame(frame, type, seq, total, parsedPayload);
@@ -485,10 +536,10 @@ TEST_F(ParseFrameTest, ParseFailsForTruncatedPayload) {
     
     QByteArray frame = makeValidFrame(LoRaUsbAdapter_E22_400T22U::FrameType::DATA, 0, 1, payload);
     // Truncate the frame (remove payload bytes)
-    frame = frame.left(6);  // Only keep header + 2 bytes of payload + CRC
+    frame = frame.left(7);  // Only keep header + 2 bytes of payload + CRC
     
     LoRaUsbAdapter_E22_400T22U::FrameType type;
-    quint8 seq, total;
+    quint16 seq, total;
     QByteArray parsedPayload;
     
     bool result = parseTestFrame(frame, type, seq, total, parsedPayload);
@@ -501,20 +552,20 @@ TEST_F(ParseFrameTest, ParseFailsForTruncatedPayload) {
  */
 TEST_F(ParseFrameTest, ParseFrameWithMaxPayload) {
     QByteArray payload;
-    for (int i = 0; i < 26; ++i) {
+    for (int i = 0; i < 25; ++i) {
         payload.append(static_cast<char>('A' + i));
     }
     
     QByteArray frame = makeValidFrame(LoRaUsbAdapter_E22_400T22U::FrameType::DATA, 0, 1, payload);
     
     LoRaUsbAdapter_E22_400T22U::FrameType type;
-    quint8 seq, total;
+    quint16 seq, total;
     QByteArray parsedPayload;
     
     bool result = parseTestFrame(frame, type, seq, total, parsedPayload);
     
     EXPECT_TRUE(result);
-    EXPECT_EQ(parsedPayload.size(), 26);
+    EXPECT_EQ(parsedPayload.size(), 25);
     EXPECT_EQ(parsedPayload, payload);
 }
 
@@ -525,7 +576,7 @@ TEST_F(ParseFrameTest, ParseFrameWithZeroPayload) {
     QByteArray frame = makeValidFrame(LoRaUsbAdapter_E22_400T22U::FrameType::DATA, 0, 1, QByteArray());
     
     LoRaUsbAdapter_E22_400T22U::FrameType type;
-    quint8 seq, total;
+    quint16 seq, total;
     QByteArray parsedPayload;
     
     bool result = parseTestFrame(frame, type, seq, total, parsedPayload);
@@ -540,8 +591,8 @@ TEST_F(ParseFrameTest, ParseFrameWithZeroPayload) {
 TEST_F(ParseFrameTest, ParseAllFrameTypes) {
     struct TestCase {
         LoRaUsbAdapter_E22_400T22U::FrameType type;
-        quint8 seq;
-        quint8 total;
+        quint16 seq;
+        quint16 total;
         QByteArray payload;
     };
     
@@ -556,7 +607,7 @@ TEST_F(ParseFrameTest, ParseAllFrameTypes) {
         QByteArray frame = makeValidFrame(tc.type, tc.seq, tc.total, tc.payload);
         
         LoRaUsbAdapter_E22_400T22U::FrameType parsedType;
-        quint8 parsedSeq, parsedTotal;
+        quint16 parsedSeq, parsedTotal;
         QByteArray parsedPayload;
         
         bool result = parseTestFrame(frame, parsedType, parsedSeq, parsedTotal, parsedPayload);
@@ -584,7 +635,7 @@ TEST_F(ParseFrameTest, ParsePreservesBinaryData) {
     QByteArray frame = makeValidFrame(LoRaUsbAdapter_E22_400T22U::FrameType::DATA, 0, 1, payload);
     
     LoRaUsbAdapter_E22_400T22U::FrameType type;
-    quint8 seq, total;
+    quint16 seq, total;
     QByteArray parsedPayload;
     
     bool result = parseTestFrame(frame, type, seq, total, parsedPayload);

@@ -32,13 +32,17 @@ quint8 LoRaUsbAdapter_E22_400T22U::crc8(const QByteArray &data) {
     return crc;
 }
 
-QByteArray LoRaUsbAdapter_E22_400T22U::makeFrame(FrameType type, quint8 seq, quint8 total,
+QByteArray LoRaUsbAdapter_E22_400T22U::makeFrame(FrameType type, quint16 seq, quint16 total,
                                             const QByteArray &payload) {
-    const int payloadLen = qMin(payload.size(), 26);
+    const int payloadLen = qMin(payload.size(), static_cast<int>(FrameSize::MAX_PAYLOAD_SIZE));
     QByteArray header;
     header.append(static_cast<quint8>(type));
-    header.append(seq);
-    header.append(total);
+    // Append seq as little-endian 16-bit value
+    header.append(static_cast<quint8>(seq & 0xFF));
+    header.append(static_cast<quint8>((seq >> 8) & 0xFF));
+    // Append total as little-endian 16-bit value
+    header.append(static_cast<quint8>(total & 0xFF));
+    header.append(static_cast<quint8>((total >> 8) & 0xFF));
     header.append(static_cast<quint8>(payloadLen));
 
     QByteArray data = header + payload.left(payloadLen);
@@ -47,25 +51,31 @@ QByteArray LoRaUsbAdapter_E22_400T22U::makeFrame(FrameType type, quint8 seq, qui
 }
 
 bool LoRaUsbAdapter_E22_400T22U::parseFrame(const QByteArray &raw, FrameType &type,
-                                       quint8 &seq, quint8 &total, QByteArray &payload) {
-    if (raw.size() < 5) return false;
+                                       quint16 &seq, quint16 &total, QByteArray &payload) {
+    // New frame format: [Type(1)][Seq(2)][Total(2)][Len(1)][Payload...][CRC(1)]
+    // Minimum frame size is 7 bytes (Type(1) + Seq(2) + Total(2) + Len(1) + CRC(1))
+    if (raw.size() < static_cast<int>(FrameSize::MIN_FRAME_SIZE)) return false;
 
-    const quint8 len = static_cast<quint8>(raw[3]);
-    if (raw.size() < 5 + len) return false;
+    const quint8 len = static_cast<quint8>(raw[static_cast<int>(FramePosition::LEN_POS)]);
+    if (raw.size() < static_cast<int>(FrameSize::MIN_FRAME_SIZE) + len) return false;
 
-    QByteArray headerAndData = raw.left(4 + len);
+    QByteArray headerAndData = raw.left(static_cast<int>(FrameSize::HEADER_SIZE) + len);
     quint8 expectedCrc = crc8(headerAndData);
-    quint8 actualCrc = static_cast<quint8>(raw[4 + len]);
+    quint8 actualCrc = static_cast<quint8>(raw[static_cast<int>(FrameSize::MIN_FRAME_SIZE) + len - 1]);
 
     if (expectedCrc != actualCrc) {
         emit error("CRC mismatch");
         return false;
     }
 
-    type = static_cast<FrameType>(static_cast<quint8>(raw[0]));
-    seq = static_cast<quint8>(raw[1]);
-    total = static_cast<quint8>(raw[2]);
-    payload = raw.mid(4, len);
+    type = static_cast<FrameType>(static_cast<quint8>(raw[static_cast<int>(FramePosition::TYPE_POS)]));
+    // Parse seq as little-endian 16-bit value
+    seq = static_cast<quint8>(raw[static_cast<int>(FramePosition::SEQ_LOW_POS)]) |
+          (static_cast<quint8>(raw[static_cast<int>(FramePosition::SEQ_HIGH_POS)]) << 8);
+    // Parse total as little-endian 16-bit value
+    total = static_cast<quint8>(raw[static_cast<int>(FramePosition::TOTAL_LOW_POS)]) |
+            (static_cast<quint8>(raw[static_cast<int>(FramePosition::TOTAL_HIGH_POS)]) << 8);
+    payload = raw.mid(static_cast<int>(FramePosition::PAYLOAD_START_POS), len);
     return true;
 }
 
@@ -77,14 +87,14 @@ void LoRaUsbAdapter_E22_400T22U::sendPacket(const QByteArray &data) {
     }
 
     m_chunks.clear();
-    const int chunkSize = 26;
+    const int chunkSize = static_cast<int>(FrameSize::MAX_PAYLOAD_SIZE);
     const int total = (data.size() + chunkSize - 1) / chunkSize;
 
     m_totalPacketBytes = data.size();
     for (int i = 0; i < total; ++i) {
         int start = i * chunkSize;
         int len = qMin(chunkSize, data.size() - start);
-        m_chunks.append({static_cast<quint8>(i), static_cast<quint8>(total), data.mid(start, len)});
+        m_chunks.append({static_cast<quint16>(i), static_cast<quint16>(total), data.mid(start, len)});
     }
 
     m_currentChunkIndex = -1;
@@ -100,7 +110,8 @@ void LoRaUsbAdapter_E22_400T22U::sendChunk(int index) {
     const auto &chunk = m_chunks[index];
 
     QByteArray frame = makeFrame(FrameType::DATA, chunk.seq, chunk.total, chunk.payload);
-    if (frame.size() > 32) {
+    // New max frame size: Type(1) + Seq(2) + Total(2) + Len(1) + Payload(25) + CRC(1) = 32 bytes
+    if (frame.size() > static_cast<int>(FrameSize::MAX_FRAME_SIZE)) {
         emit error("Frame too large!");
         return;
     }
@@ -117,7 +128,7 @@ void LoRaUsbAdapter_E22_400T22U::sendChunk(int index) {
     QEventLoop loop;
     QTimer timeoutTimer;
     timeoutTimer.setSingleShot(true);
-    timeoutTimer.setInterval(100); // timeout in ms
+    timeoutTimer.setInterval(WRITE_TIMEOUT_MS); // timeout in ms
     
     QObject::connect(m_serial.get(), &QCrossPlatformSerialPort::bytesWritten,
                      &loop, &QEventLoop::quit, Qt::UniqueConnection);
@@ -159,16 +170,18 @@ void LoRaUsbAdapter_E22_400T22U::onReadyRead() {
     static QByteArray buffer;
     buffer.append(m_serial->readAll());
 
-    while (buffer.size() >= 5) {
-        quint8 len = static_cast<quint8>(buffer[3]);
-        int frameSize = 5 + len;
+    // New frame format: [Type(1)][Seq(2)][Total(2)][Len(1)][Payload...][CRC(1)]
+    // Minimum frame size is 7 bytes (Type(1) + Seq(2) + Total(2) + Len(1) + CRC(1))
+    while (buffer.size() >= static_cast<int>(FrameSize::MIN_FRAME_SIZE)) {
+        quint8 len = static_cast<quint8>(buffer[static_cast<int>(FramePosition::LEN_POS)]);
+        int frameSize = static_cast<int>(FrameSize::MIN_FRAME_SIZE) + len;
         if (buffer.size() < frameSize) break;
 
         QByteArray frame = buffer.left(frameSize);
         buffer = buffer.mid(frameSize);
 
         FrameType type;
-        quint8 seq, total;
+        quint16 seq, total;
         QByteArray payload;
         if (!parseFrame(frame, type, seq, total, payload)) {
             continue;
@@ -197,7 +210,7 @@ void LoRaUsbAdapter_E22_400T22U::onReadyRead() {
             QEventLoop loop;
             QTimer timeoutTimer;
             timeoutTimer.setSingleShot(true);
-            timeoutTimer.setInterval(50); // timeout in ms
+            timeoutTimer.setInterval(ACK_WRITE_TIMEOUT_MS); // timeout in ms
             
             QObject::connect(m_serial.get(), &QCrossPlatformSerialPort::bytesWritten,
                              &loop, &QEventLoop::quit, Qt::UniqueConnection);
@@ -226,15 +239,15 @@ void LoRaUsbAdapter_E22_400T22U::onReadyRead() {
 
                 if (m_recvState.expectedSize == -1) {
                     if (seq == total - 1) {
-                        m_recvState.expectedSize = total * 26;
+                        m_recvState.expectedSize = total * static_cast<int>(FrameSize::MAX_PAYLOAD_SIZE);
                     } else {
-                        m_recvState.expectedSize = total * 26;
+                        m_recvState.expectedSize = total * static_cast<int>(FrameSize::MAX_PAYLOAD_SIZE);
                     }
                 }
 
                 if (m_recvState.receivedCount == m_recvState.total) {
                     int exactSize = 0;
-                    for (quint8 i = 0; i < total; ++i) {
+                    for (quint16 i = 0; i < total; ++i) {
                         if (m_recvState.chunks.contains(i)) {
                             exactSize += m_recvState.chunks[i].size();
                         }
@@ -242,7 +255,9 @@ void LoRaUsbAdapter_E22_400T22U::onReadyRead() {
                     m_recvState.expectedSize = exactSize;
                 }
 
-                int totalBytes = (m_recvState.expectedSize == -1) ? total * 26 : m_recvState.expectedSize;
+                int totalBytes = (m_recvState.expectedSize == -1) ?
+                                total * static_cast<int>(FrameSize::MAX_PAYLOAD_SIZE) :
+                                m_recvState.expectedSize;
 
                 emit packetProgress(receivedBytes, totalBytes);
             }
@@ -250,7 +265,7 @@ void LoRaUsbAdapter_E22_400T22U::onReadyRead() {
             if (m_recvState.receivedCount == m_recvState.total && !m_recvState.packetAckSent) {
                 QByteArray full;
                 int exactSize = 0;
-                for (quint8 i = 0; i < m_recvState.total; ++i) {
+                for (quint16 i = 0; i < m_recvState.total; ++i) {
                     if (m_recvState.chunks.contains(i)) {
                         const QByteArray &ch = m_recvState.chunks[i];
                         full.append(ch);
@@ -270,7 +285,7 @@ void LoRaUsbAdapter_E22_400T22U::onReadyRead() {
                 QEventLoop loop;
                 QTimer timeoutTimer;
                 timeoutTimer.setSingleShot(true);
-                timeoutTimer.setInterval(50); // timeout in ms
+                timeoutTimer.setInterval(ACK_WRITE_TIMEOUT_MS); // timeout in ms
                 
                 QObject::connect(m_serial.get(), &QCrossPlatformSerialPort::bytesWritten,
                                  &loop, &QEventLoop::quit, Qt::UniqueConnection);
@@ -292,7 +307,7 @@ void LoRaUsbAdapter_E22_400T22U::onReadyRead() {
 
                 emit packetProgress(exactSize, exactSize);
                 emit packetReceived(full);
-                QTimer::singleShot(2000, this, &LoRaUsbAdapter_E22_400T22U::resetReceiveState);
+                QTimer::singleShot(RECEIVE_STATE_RESET_DELAY_MS, this, &LoRaUsbAdapter_E22_400T22U::resetReceiveState);
             }
             break;
         }

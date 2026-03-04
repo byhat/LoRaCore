@@ -14,6 +14,7 @@
 #include <QString>
 #include <QSignalSpy>
 #include "../src/LoRaWorker.hpp"
+#include "../src/LoRaUsbAdapter_E22_400T22U.hpp"
 
 /**
  * @class LoRaWorkerTest
@@ -200,12 +201,12 @@ TEST_F(LoRaWorkerTest, WorkerCanBeCreatedWithParent) {
 }
 
 /**
- * @test Verify sendPacket with maximum chunk boundary (26 bytes)
+ * @test Verify sendPacket with maximum chunk boundary (MAX_PAYLOAD_SIZE bytes)
  */
 TEST_F(LoRaWorkerTest, SendPacketAtChunkBoundary) {
-    // Exactly 26 bytes (one chunk)
+    // Exactly MAX_PAYLOAD_SIZE bytes (one chunk)
     QByteArray data;
-    for (int i = 0; i < 26; ++i) {
+    for (int i = 0; i < static_cast<int>(LoRaUsbAdapter_E22_400T22U::FrameSize::MAX_PAYLOAD_SIZE); ++i) {
         data.append(static_cast<char>('A' + i));
     }
     worker->sendPacket(data);
@@ -213,12 +214,12 @@ TEST_F(LoRaWorkerTest, SendPacketAtChunkBoundary) {
 }
 
 /**
- * @test Verify sendPacket just over chunk boundary (27 bytes)
+ * @test Verify sendPacket just over chunk boundary (MAX_PAYLOAD_SIZE + 1 bytes)
  */
 TEST_F(LoRaWorkerTest, SendPacketJustOverChunkBoundary) {
-    // 27 bytes (two chunks)
+    // MAX_PAYLOAD_SIZE + 1 bytes (two chunks)
     QByteArray data;
-    for (int i = 0; i < 27; ++i) {
+    for (int i = 0; i < static_cast<int>(LoRaUsbAdapter_E22_400T22U::FrameSize::MAX_PAYLOAD_SIZE) + 1; ++i) {
         data.append(static_cast<char>('A' + i));
     }
     worker->sendPacket(data);
@@ -229,9 +230,9 @@ TEST_F(LoRaWorkerTest, SendPacketJustOverChunkBoundary) {
  * @test Verify sendPacket with exact multiple of chunk size
  */
 TEST_F(LoRaWorkerTest, SendPacketExactMultipleOfChunkSize) {
-    // 52 bytes (exactly 2 chunks)
+    // 2 * MAX_PAYLOAD_SIZE bytes (exactly 2 chunks)
     QByteArray data;
-    for (int i = 0; i < 52; ++i) {
+    for (int i = 0; i < 2 * static_cast<int>(LoRaUsbAdapter_E22_400T22U::FrameSize::MAX_PAYLOAD_SIZE); ++i) {
         data.append(static_cast<char>('A' + (i % 26)));
     }
     worker->sendPacket(data);

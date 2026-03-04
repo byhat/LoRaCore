@@ -19,7 +19,7 @@
  * @brief USB/Serial adapter for E22-400T22U LoRa module communication
  * @details This class implements a reliable packet-based communication protocol
  *          for the E22-400T22U LoRa module over USB/Serial. Features include:
- *          - Automatic packet chunking for large data (max 26 bytes per chunk)
+ *          - Automatic packet chunking for large data (max FrameSize::MAX_PAYLOAD_SIZE bytes per chunk)
  *          - CRC-8 checksum verification for data integrity
  *          - Automatic retransmission with configurable retry limit
  *          - Packet reassembly on receiver side
@@ -27,9 +27,9 @@
  *          - ACK/NACK protocol for reliable delivery
  *
  *          Protocol Frame Format:
- *          [Type(1)][Seq(1)][Total(1)][Len(1)][Payload(0-26)][CRC(1)]
+ *          [Type(FrameSize::TYPE_SIZE)][Seq(FrameSize::SEQ_SIZE)][Total(FrameSize::TOTAL_SIZE)][Len(FrameSize::LEN_SIZE)][Payload(0-FrameSize::MAX_PAYLOAD_SIZE)][CRC(FrameSize::CRC_SIZE)]
  *
- *          Frame Types:
+ *          Frame Types (see FrameType enum):
  *          - DATA (0x10): Data chunk transmission
  *          - ACK (0x20): Acknowledgment for received chunk
  *          - NACK (0x30): Negative acknowledgment (not currently used)
@@ -50,6 +50,38 @@ public:
         ACK  = 0x20,       ///< Acknowledgment frame for received data chunk
         NACK = 0x30,       ///< Negative acknowledgment (reserved for future use)
         PACKET_ACK = 0x50  ///< Acknowledgment for complete packet reception
+    };
+
+    /**
+     * @enum FramePosition
+     * @brief Byte positions within the protocol frame
+     * @details Defines the offset of each field in the frame buffer
+     */
+    enum class FramePosition : quint8 {
+        TYPE_POS = 0,           ///< Position of Type field
+        SEQ_LOW_POS = 1,        ///< Position of Sequence number low byte
+        SEQ_HIGH_POS = 2,       ///< Position of Sequence number high byte
+        TOTAL_LOW_POS = 3,      ///< Position of Total chunks low byte
+        TOTAL_HIGH_POS = 4,     ///< Position of Total chunks high byte
+        LEN_POS = 5,            ///< Position of Payload length field
+        PAYLOAD_START_POS = 6   ///< Position where payload data begins
+    };
+
+    /**
+     * @enum FrameSize
+     * @brief Size constants for frame fields and overall frame
+     * @details Defines the size of each field and frame limits
+     */
+    enum class FrameSize : quint8 {
+        TYPE_SIZE = 1,          ///< Size of Type field in bytes
+        SEQ_SIZE = 2,           ///< Size of Sequence number in bytes
+        TOTAL_SIZE = 2,         ///< Size of Total chunks in bytes
+        LEN_SIZE = 1,           ///< Size of Payload length in bytes
+        CRC_SIZE = 1,           ///< Size of CRC-8 checksum in bytes
+        HEADER_SIZE = 6,        ///< Total header size (Type + Seq + Total + Len)
+        MIN_FRAME_SIZE = 7,     ///< Minimum frame size (HEADER_SIZE + CRC_SIZE)
+        MAX_PAYLOAD_SIZE = 25,   ///< Maximum payload size in bytes
+        MAX_FRAME_SIZE = 32     ///< Maximum frame size (HEADER_SIZE + MAX_PAYLOAD_SIZE + CRC_SIZE)
     };
 
     /**
@@ -74,12 +106,12 @@ public:
     /**
      * @brief Sends a packet of data via LoRa
      * @param data The byte array containing the packet data to send
-     * @details Splits the data into chunks of maximum 26 bytes each,
+     * @details Splits the data into chunks of maximum FrameSize::MAX_PAYLOAD_SIZE bytes each,
      *          then transmits each chunk with automatic retry on failure.
      *          Each chunk is sent as a separate frame with sequence numbers.
      *
      *          The transmission process:
-     *          1. Split data into 26-byte chunks
+     *          1. Split data into FrameSize::MAX_PAYLOAD_SIZE-byte chunks
      *          2. Send first chunk and wait for ACK
      *          3. On ACK, send next chunk; on timeout, retry current chunk
      *          4. After MAX_RETRIES, abort and emit error
@@ -154,9 +186,9 @@ private:
      *          reliable transmission protocol.
      */
     struct Chunk {
-        quint8 seq = 0;          ///< Sequence number of this chunk (0-based)
-        quint8 total = 0;        ///< Total number of chunks in the packet
-        QByteArray payload;      ///< Actual data payload (max 26 bytes)
+        quint16 seq = 0;          ///< Sequence number of this chunk (0-based)
+        quint16 total = 0;        ///< Total number of chunks in the packet
+        QByteArray payload;      ///< Actual data payload (max FrameSize::MAX_PAYLOAD_SIZE bytes)
     };
 
     /**
@@ -210,6 +242,21 @@ private:
     static constexpr int TIMEOUT_MS = 1000;
 
     /**
+     * @brief Timeout in milliseconds for serial write operations
+     */
+    static constexpr int WRITE_TIMEOUT_MS = 100;
+
+    /**
+     * @brief Timeout in milliseconds for ACK/PACKET_ACK write operations
+     */
+    static constexpr int ACK_WRITE_TIMEOUT_MS = 50;
+
+    /**
+     * @brief Delay in milliseconds before resetting receive state after packet completion
+     */
+    static constexpr int RECEIVE_STATE_RESET_DELAY_MS = 2000;
+
+    /**
      * @struct PacketReassembly
      * @brief State for reassembling received chunks into a complete packet
      * @details Tracks the progress of incoming packet reception.
@@ -218,7 +265,7 @@ private:
         int total = 0;                      ///< Total number of chunks expected
         int receivedCount = 0;              ///< Number of chunks received so far
         int expectedSize = -1;              ///< Expected total packet size (-1 if unknown)
-        QHash<quint8, QByteArray> chunks;   ///< Map of sequence number to chunk data
+        QHash<quint16, QByteArray> chunks;   ///< Map of sequence number to chunk data
         bool packetAckSent = false;         ///< Whether PACKET_ACK has been sent
     };
 
@@ -230,26 +277,26 @@ private:
     /**
      * @brief Creates a protocol frame with the given parameters
      * @param type The frame type (DATA, ACK, NACK, or PACKET_ACK)
-     * @param seq Sequence number of the chunk
-     * @param total Total number of chunks in the packet
-     * @param payload Optional payload data (max 26 bytes)
+     * @param seq Sequence number of the chunk (FrameSize::SEQ_SIZE bytes, little-endian)
+     * @param total Total number of chunks in the packet (FrameSize::TOTAL_SIZE bytes, little-endian)
+     * @param payload Optional payload data (max FrameSize::MAX_PAYLOAD_SIZE bytes)
      * @return Complete frame with CRC-8 checksum appended
-     * @details Frame format: [Type][Seq][Total][Len][Payload...][CRC]
+     * @details Frame format: [Type(FrameSize::TYPE_SIZE)][Seq(FrameSize::SEQ_SIZE)][Total(FrameSize::TOTAL_SIZE)][Len(FrameSize::LEN_SIZE)][Payload...][CRC(FrameSize::CRC_SIZE)]
      */
-    QByteArray makeFrame(FrameType type, quint8 seq, quint8 total, const QByteArray &payload = {});
+    QByteArray makeFrame(FrameType type, quint16 seq, quint16 total, const QByteArray &payload = {});
 
     /**
      * @brief Parses a raw frame into its components
      * @param raw The raw frame data to parse
      * @param type Output parameter for the frame type
-     * @param seq Output parameter for the sequence number
-     * @param total Output parameter for the total chunks
+     * @param seq Output parameter for the sequence number (FrameSize::SEQ_SIZE bytes, little-endian)
+     * @param total Output parameter for the total chunks (FrameSize::TOTAL_SIZE bytes, little-endian)
      * @param payload Output parameter for the payload data
      * @return true if frame was parsed successfully, false otherwise
      * @details Validates frame length and CRC-8 checksum.
      *          Returns false if frame is malformed or CRC mismatch.
      */
-    bool parseFrame(const QByteArray &raw, FrameType &type, quint8 &seq, quint8 &total, QByteArray &payload);
+    bool parseFrame(const QByteArray &raw, FrameType &type, quint16 &seq, quint16 &total, QByteArray &payload);
 
     /**
      * @brief Calculates CRC-8 checksum for data
