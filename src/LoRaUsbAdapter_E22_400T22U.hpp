@@ -27,7 +27,7 @@
  *          - ACK/NACK protocol for reliable delivery
  *
  *          Protocol Frame Format:
- *          [Type(FrameSize::TYPE_SIZE)][Seq(FrameSize::SEQ_SIZE)][Total(FrameSize::TOTAL_SIZE)][Len(FrameSize::LEN_SIZE)][Payload(0-FrameSize::MAX_PAYLOAD_SIZE)][CRC(FrameSize::CRC_SIZE)]
+ *          [Type(1)][Seq(2)][Total(3)][Len(1)][Payload(0-FrameSize::MAX_PAYLOAD_SIZE)][CRC(1)]
  *
  *          Frame Types (see FrameType enum):
  *          - DATA (0x10): Data chunk transmission
@@ -62,9 +62,10 @@ public:
         SEQ_LOW_POS = 1,        ///< Position of Sequence number low byte
         SEQ_HIGH_POS = 2,       ///< Position of Sequence number high byte
         TOTAL_LOW_POS = 3,      ///< Position of Total chunks low byte
-        TOTAL_HIGH_POS = 4,     ///< Position of Total chunks high byte
-        LEN_POS = 5,            ///< Position of Payload length field
-        PAYLOAD_START_POS = 6   ///< Position where payload data begins
+        TOTAL_MIDDLE_POS = 4,   ///< Position of Total chunks middle byte
+        TOTAL_HIGH_POS = 5,     ///< Position of Total chunks high byte
+        LEN_POS = 6,            ///< Position of Payload length field
+        PAYLOAD_START_POS = 7   ///< Position where payload data begins
     };
 
     /**
@@ -75,12 +76,12 @@ public:
     enum class FrameSize : quint8 {
         TYPE_SIZE = 1,          ///< Size of Type field in bytes
         SEQ_SIZE = 2,           ///< Size of Sequence number in bytes
-        TOTAL_SIZE = 2,         ///< Size of Total chunks in bytes
+        TOTAL_SIZE = 3,         ///< Size of Total chunks in bytes
         LEN_SIZE = 1,           ///< Size of Payload length in bytes
         CRC_SIZE = 1,           ///< Size of CRC-8 checksum in bytes
-        HEADER_SIZE = 6,        ///< Total header size (Type + Seq + Total + Len)
-        MIN_FRAME_SIZE = 7,     ///< Minimum frame size (HEADER_SIZE + CRC_SIZE)
-        MAX_PAYLOAD_SIZE = 25,   ///< Maximum payload size in bytes
+        HEADER_SIZE = 7,        ///< Total header size (Type + Seq + Total + Len)
+        MIN_FRAME_SIZE = 8,     ///< Minimum frame size (HEADER_SIZE + CRC_SIZE)
+        MAX_PAYLOAD_SIZE = 24,   ///< Maximum payload size in bytes
         MAX_FRAME_SIZE = 32     ///< Maximum frame size (HEADER_SIZE + MAX_PAYLOAD_SIZE + CRC_SIZE)
     };
 
@@ -187,7 +188,7 @@ private:
      */
     struct Chunk {
         quint16 seq = 0;          ///< Sequence number of this chunk (0-based)
-        quint16 total = 0;        ///< Total number of chunks in the packet
+        quint32 total = 0;        ///< Total number of chunks in the packet (3 bytes used)
         QByteArray payload;      ///< Actual data payload (max FrameSize::MAX_PAYLOAD_SIZE bytes)
     };
 
@@ -283,7 +284,7 @@ private:
      * @return Complete frame with CRC-8 checksum appended
      * @details Frame format: [Type(FrameSize::TYPE_SIZE)][Seq(FrameSize::SEQ_SIZE)][Total(FrameSize::TOTAL_SIZE)][Len(FrameSize::LEN_SIZE)][Payload...][CRC(FrameSize::CRC_SIZE)]
      */
-    QByteArray makeFrame(FrameType type, quint16 seq, quint16 total, const QByteArray &payload = {});
+    QByteArray makeFrame(FrameType type, quint16 seq, quint32 total, const QByteArray &payload = {});
 
     /**
      * @brief Parses a raw frame into its components
@@ -296,7 +297,7 @@ private:
      * @details Validates frame length and CRC-8 checksum.
      *          Returns false if frame is malformed or CRC mismatch.
      */
-    bool parseFrame(const QByteArray &raw, FrameType &type, quint16 &seq, quint16 &total, QByteArray &payload);
+    bool parseFrame(const QByteArray &raw, FrameType &type, quint16 &seq, quint32 &total, QByteArray &payload);
 
     /**
      * @brief Calculates CRC-8 checksum for data
