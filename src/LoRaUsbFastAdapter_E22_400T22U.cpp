@@ -35,7 +35,5 @@ LoRaUsbFastAdapter_E22_400T22U::LoRaUsbFastAdapter_E22_400T22U(std::shared_ptr<Q
 
 void LoRaUsbFastAdapter_E22_400T22U::sendPacket(const QByteArray &data)
 {
-    if (condition)
-        do1();
-        do2();
+
 }

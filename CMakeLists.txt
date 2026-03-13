@@ -28,6 +28,9 @@ qt_add_library(LoRaCore STATIC
     src/LoRaUsbAdapter_E22_400T22U.cpp
     src/LoRaWorker.hpp
     src/LoRaWorker.cpp
+    src/LoRaUsbFastAdapter_E22_400T22U.hpp
+    src/LoRaUsbFastAdapter_E22_400T22U.cpp
+    src/ProtocolStructures.hpp
 )
 
 add_library(LoRaCore::LoRaCore ALIAS LoRaCore)
