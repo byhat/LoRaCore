@@ -7,6 +7,7 @@
 #include <QDebug>
 #include <typeinfo>
 #include <algorithm>
+#include <format>
 
 #include <QByteArray>
 
@@ -319,4 +320,24 @@ private:
 };
 
 
+};
+
+
+template <>
+struct std::formatter<LoRaProtocol::PacketType> : std::formatter<std::string> {
+    auto format(LoRaProtocol::PacketType type, std::format_context& ctx) const {
+        std::string name;
+
+        switch (type) {
+            case LoRaProtocol::PacketType::First:           name = "First";           break;
+            case LoRaProtocol::PacketType::Data:            name = "Data";            break;
+            case LoRaProtocol::PacketType::RequestMissings: name = "RequestMissings"; break;
+            case LoRaProtocol::PacketType::EndSend:         name = "EndSend";         break;
+            case LoRaProtocol::PacketType::ReadyToReceive:  name = "ReadyToReceive";  break;
+            case LoRaProtocol::PacketType::AbortReceiving:  name = "AbortReceiving";  break;
+            default:                                        name = "Unknown";         break;
+        }
+
+        return std::formatter<std::string>::format(name, ctx);
+    }
 };

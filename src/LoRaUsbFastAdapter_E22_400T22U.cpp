@@ -72,7 +72,7 @@ void LoRaUsbFastAdapter_E22_400T22U::onReadyRead()
 
         qDebug() << typeid(*this).name()
                  << __PRETTY_FUNCTION__
-                 << QString("Receive message type: %1").arg(packet[LoRaProtocol::PACKET_TYPE_POSITION]);
+                 << QString("Receive message type: %1").arg(std::format("{}", packetType));
 
         // Handle AbortReceivingPacket - can be received in ANY state
         if (packetType == LoRaProtocol::PacketType::AbortReceiving) {
@@ -223,6 +223,7 @@ void LoRaUsbFastAdapter_E22_400T22U::setupReceiveMachine()
     m_rFirstReceive->addTransition(this, &LoRaUsbFastAdapter_E22_400T22U::abortReceivingReceived, m_rConnected);
     m_rReceivePackets->addTransition(this, &LoRaUsbFastAdapter_E22_400T22U::abortReceivingReceived, m_rConnected);
     m_rReceiveMissingMsg->addTransition(this, &LoRaUsbFastAdapter_E22_400T22U::abortReceivingReceived, m_rConnected);
+    m_rReceiveMissingMsg->addTransition(this, &LoRaUsbFastAdapter_E22_400T22U::packetReceived, m_rConnected);
 
     // Add custom event transitions
     m_rFirstReceive->addTransition(this, &LoRaUsbFastAdapter_E22_400T22U::receiveTimeout, m_rConnected);
@@ -276,7 +277,10 @@ void LoRaUsbFastAdapter_E22_400T22U::setupSendMachine()
             if (m_sendRetryCount >= MAX_RETRIES) {
                 emit error("Timeout in start sending state, max retries reached");
                 emit packetSent(false);
-                m_send->postEvent(new QEvent(TransitionToConnectedEvent));
+                qDebug() << typeid(*this).name()
+                         << __PRETTY_FUNCTION__
+                         << QString("Emitting transitionToConnectedSignal - timeout in start sending");
+                emit transitionToConnectedSignal();
             } else {
                 m_sendRetryCount++;
                 sendFirstPacket();
@@ -296,7 +300,10 @@ void LoRaUsbFastAdapter_E22_400T22U::setupSendMachine()
             if (m_sendRetryCount >= MAX_RETRIES) {
                 emit error("Timeout in send missing state, max retries reached");
                 emit packetSent(false);
-                m_send->postEvent(new QEvent(TransitionToConnectedEvent));
+                qDebug() << typeid(*this).name()
+                         << __PRETTY_FUNCTION__
+                         << QString("Emitting transitionToConnectedSignal - timeout in send missing");
+                emit transitionToConnectedSignal();
             } else {
                 m_sendRetryCount++;
                 sendEndPacket();
@@ -315,7 +322,10 @@ void LoRaUsbFastAdapter_E22_400T22U::setupSendMachine()
             if (m_sendRetryCount >= MAX_RETRIES) {
                 emit error("Timeout in resend missing state, max retries reached");
                 emit packetSent(false);
-                m_send->postEvent(new QEvent(TransitionToConnectedEvent));
+                qDebug() << typeid(*this).name()
+                         << __PRETTY_FUNCTION__
+                         << QString("Emitting transitionToConnectedSignal - timeout in resend missing");
+                emit transitionToConnectedSignal();
             } else {
                 m_sendRetryCount++;
                 // Resend current missing chunk (don't increment index)
@@ -331,22 +341,87 @@ void LoRaUsbFastAdapter_E22_400T22U::setupSendMachine()
     m_sSendMissing->addTransition(this, &LoRaUsbFastAdapter_E22_400T22U::abortReceivingReceived, m_sConnected);
     m_sResendMissing->addTransition(this, &LoRaUsbFastAdapter_E22_400T22U::abortReceivingReceived, m_sConnected);
 
-    // Connect requestMissingsReceived signal to handle transitions from m_sSendMissing
+    // Connect requestMissingsReceived signal to handle transitions from m_sSendAll and m_sSendMissing
     connect(this, &LoRaUsbFastAdapter_E22_400T22U::requestMissingsReceived, this, [this](const QVector<uint32_t>& missingChunks) {
-        // Only handle in SendMissing state
-        if (m_send->configuration().contains(m_sSendMissing)) {
-            // Check if ALL elements are zero (all data received)
-            bool allReceived = true;
-            for (const auto& chunk : missingChunks) {
-                if (chunk != 0) {
-                    allReceived = false;
-                    break;
+        // Handle in SendAll state (RequestMissings may arrive before delayed transition to SendMissing)
+        if (m_send->configuration().contains(m_sSendAll)) {
+            // Check if vector is empty (no missing packets) or ALL elements are zero (all data received)
+            bool allReceived = false;
+            if (missingChunks.isEmpty()) {
+                // Empty vector means no missing packets
+                allReceived = true;
+                qDebug() << typeid(*this).name()
+                         << __PRETTY_FUNCTION__
+                         << QString("RequestMissings received with empty vector - transitioning to Connected");
+            } else {
+                // Check if ALL elements are zero (all data received)
+                allReceived = true;
+                for (const auto& chunk : missingChunks) {
+                    if (chunk != 0) {
+                        allReceived = false;
+                        break;
+                    }
+                }
+                if (allReceived) {
+                    qDebug() << typeid(*this).name()
+                             << __PRETTY_FUNCTION__
+                             << QString("RequestMissings received with all zeros - transitioning to Connected");
                 }
             }
             if (allReceived) {
                 // All data received, transition to Connected
                 emit packetSent(true);
-                m_send->postEvent(new QEvent(TransitionToConnectedEvent));
+                qDebug() << typeid(*this).name()
+                         << __PRETTY_FUNCTION__
+                         << QString("Emitting transitionToConnectedSignal - all data received in SendAll");
+                emit transitionToConnectedSignal();
+            } else {
+                // Missing chunks, need to resend them
+                m_missingChunksToResend.clear();
+                for (const auto& chunk : missingChunks) {
+                    if (chunk != 0) {
+                        m_missingChunksToResend.append(static_cast<int>(chunk));
+                    }
+                }
+                // Set up for resending missing chunks
+                m_resendMissingIndex = 0;
+                m_resendingMissing = true;
+                // Transition to ResendMissing state
+                m_send->postEvent(new QEvent(TransitionToResendMissingEvent));
+            }
+        }
+        // Also handle in SendMissing state (normal flow)
+        else if (m_send->configuration().contains(m_sSendMissing)) {
+            // Check if vector is empty (no missing packets) or ALL elements are zero (all data received)
+            bool allReceived = false;
+            if (missingChunks.isEmpty()) {
+                // Empty vector means no missing packets
+                allReceived = true;
+                qDebug() << typeid(*this).name()
+                         << __PRETTY_FUNCTION__
+                         << QString("RequestMissings received with empty vector - transitioning to Connected");
+            } else {
+                // Check if ALL elements are zero (all data received)
+                allReceived = true;
+                for (const auto& chunk : missingChunks) {
+                    if (chunk != 0) {
+                        allReceived = false;
+                        break;
+                    }
+                }
+                if (allReceived) {
+                    qDebug() << typeid(*this).name()
+                             << __PRETTY_FUNCTION__
+                             << QString("RequestMissings received with all zeros - transitioning to Connected");
+                }
+            }
+            if (allReceived) {
+                // All data received, transition to Connected
+                emit packetSent(true);
+                qDebug() << typeid(*this).name()
+                         << __PRETTY_FUNCTION__
+                         << QString("Emitting transitionToConnectedSignal - all data received in SendMissing");
+                emit transitionToConnectedSignal();
             } else {
                 // Missing chunks, need to resend them
                 m_missingChunksToResend.clear();
@@ -369,6 +444,12 @@ void LoRaUsbFastAdapter_E22_400T22U::setupSendMachine()
     m_sStartSending->addTransition(this, &LoRaUsbFastAdapter_E22_400T22U::sendTimeout, m_sConnected);
     m_sSendMissing->addTransition(this, &LoRaUsbFastAdapter_E22_400T22U::sendTimeout, m_sConnected);
     m_sResendMissing->addTransition(this, &LoRaUsbFastAdapter_E22_400T22U::sendTimeout, m_sConnected);
+
+    // Add signal-based transitions to Connected state
+    m_sStartSending->addTransition(this, &LoRaUsbFastAdapter_E22_400T22U::transitionToConnectedSignal, m_sConnected);
+    m_sSendAll->addTransition(this, &LoRaUsbFastAdapter_E22_400T22U::transitionToConnectedSignal, m_sConnected);
+    m_sSendMissing->addTransition(this, &LoRaUsbFastAdapter_E22_400T22U::transitionToConnectedSignal, m_sConnected);
+    m_sResendMissing->addTransition(this, &LoRaUsbFastAdapter_E22_400T22U::transitionToConnectedSignal, m_sConnected);
 }
 
 // Send state entry handlers
@@ -416,9 +497,14 @@ void LoRaUsbFastAdapter_E22_400T22U::onEnterSendAll()
         m_currentChunkIndex++;
     }
 
-    // After all chunks sent, send EndSendPacket and transition to SendMissing state
+    // After all chunks sent, send EndSendPacket
     sendEndPacket();
-    m_send->postEvent(new QEvent(TransitionToSendMissingEvent));
+
+    // Small delay to allow the state machine to process the transition event
+    // before the RequestMissingsPacket is received and handled
+    QTimer::singleShot(10, this, [this]() {
+        m_send->postEvent(new QEvent(TransitionToSendMissingEvent));
+    });
 }
 
 void LoRaUsbFastAdapter_E22_400T22U::onEnterSendMissing()
@@ -515,6 +601,7 @@ void LoRaUsbFastAdapter_E22_400T22U::onEnterRReceiveMissingMsg()
         emit packetReceived(receivedData);
         // Transition to Connected
         m_receive->postEvent(new QEvent(TransitionToRConnectedEvent));
+
     } else {
         // Missing chunks, send RequestMissingsPacket with missing chunk numbers
         sendMissingPacket(missingChunks);
@@ -651,7 +738,10 @@ void LoRaUsbFastAdapter_E22_400T22U::handleReceiveTimeout()
 void LoRaUsbFastAdapter_E22_400T22U::transitionToConnected()
 {
     // Transition to Connected state in send machine
-    m_send->postEvent(new QEvent(TransitionToConnectedEvent));
+    qDebug() << typeid(*this).name()
+             << __PRETTY_FUNCTION__
+             << QString("Emitting transitionToConnectedSignal");
+    emit transitionToConnectedSignal();
 }
 
 void LoRaUsbFastAdapter_E22_400T22U::transitionToRConnected()

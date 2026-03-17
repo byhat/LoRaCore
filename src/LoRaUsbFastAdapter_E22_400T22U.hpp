@@ -14,6 +14,8 @@
 #include <QEventTransition>
 #include <QEvent>
 
+#include <format>
+
 
 /**
  * @class LoRaUsbFastAdapter_E22_400T22U
@@ -123,6 +125,7 @@ signals:
     void dataPacketReceived(uint32_t chunkNum, const QByteArray& data);
     void sendTimeout();
     void receiveTimeout();
+    void transitionToConnectedSignal();
 
 private slots:
     void onReadyRead();

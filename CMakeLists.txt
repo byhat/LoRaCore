@@ -3,6 +3,9 @@ project(LoRaCore LANGUAGES CXX)
 
 option(BUILD_TESTS "BUILD UNIT TESTS" OFF)
 
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 include(FetchContent)
 
 find_package(Qt6 REQUIRED COMPONENTS Core Test SerialPort StateMachine)
