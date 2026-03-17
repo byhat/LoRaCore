@@ -5,7 +5,7 @@ option(BUILD_TESTS "BUILD UNIT TESTS" OFF)
 
 include(FetchContent)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Test SerialPort)
+find_package(Qt6 REQUIRED COMPONENTS Core Test SerialPort StateMachine)
 
 if(BUILD_TESTS)
     # Fetch Google Test
@@ -24,8 +24,8 @@ endif()
 add_subdirectory(thirdparty/QCrossPlatformSerial)
 
 qt_add_library(LoRaCore STATIC
-    src/LoRaUsbAdapter_E22_400T22U.hpp
-    src/LoRaUsbAdapter_E22_400T22U.cpp
+    # src/LoRaUsbAdapter_E22_400T22U.hpp
+    # src/LoRaUsbAdapter_E22_400T22U.cpp
     src/LoRaWorker.hpp
     src/LoRaWorker.cpp
     src/LoRaUsbFastAdapter_E22_400T22U.hpp
@@ -48,6 +48,7 @@ set_target_properties(LoRaCore PROPERTIES AUTOMOC ON)
 target_link_libraries(LoRaCore
     PUBLIC
         Qt6::Core
+        Qt6::StateMachine
         QCrossPlatformSerial
 )
 
@@ -67,8 +68,9 @@ if(BUILD_TESTS)
             gtest
             gtest_main
             Qt6::Core
-            QCrossPlatformSerial
+            Qt6::StateMachine
             Qt6::Test
+            QCrossPlatformSerial
             LoRaCore
     )
 

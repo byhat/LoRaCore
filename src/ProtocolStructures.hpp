@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <QDebug>
 #include <typeinfo>
+#include <algorithm>
 
 #include <QByteArray>
 
@@ -43,7 +44,7 @@ static constexpr qsizetype MISSING_CHUNK_NUM_POSITION = PACKET_TYPE_POSITION + P
 static constexpr qsizetype MISSING_CHUNK_NUMS = (PACKET_BYTES_STATIC_SIZE - PACKET_TYPE_SIZE) / CHUNK_NUM_BYTES_SIZE;
 
 
-template <typename T>
+template <typename T, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
 struct RequestMissingsPacket
 {
     void setMissingChunks(std::vector<T> num) {
@@ -59,18 +60,22 @@ struct RequestMissingsPacket
         arr.resize(PACKET_BYTES_STATIC_SIZE, 0);
         arr[PACKET_TYPE_POSITION] = static_cast<char>(type);
 
-        for (qsizetype i {0}; i < MISSING_CHUNK_NUMS; i++) {
-            for (qsizetype j {0}; j < CHUNK_NUM_BYTES_SIZE; j++) {
-                char val = static_cast<char>(missingChunks >> (i * 8) & 0xFF);
-                arr[MISSING_CHUNK_NUM_POSITION + i] = val;
+        qsizetype chunksToPack = std::min(static_cast<qsizetype>(missingChunks.size()), MISSING_CHUNK_NUMS);
+        for (qsizetype i = 0; i < chunksToPack; i++) {
+            T chunkNum = missingChunks[i];
+            for (qsizetype j = 0; j < CHUNK_NUM_BYTES_SIZE; j++) {
+                // Big-endian: most significant byte first
+                char val = static_cast<char>((chunkNum >> ((CHUNK_NUM_BYTES_SIZE - 1 - j) * 8)) & 0xFF);
+                arr[MISSING_CHUNK_NUM_POSITION + (i * CHUNK_NUM_BYTES_SIZE) + j] = val;
             }
         }
+        // Remaining bytes are already zeroed by resize()
 
         return arr;
     }
 
     void fromQBA(const QByteArray &arr) {
-        if (arr.size() > PACKET_BYTES_STATIC_SIZE) {
+        if (arr.size() != PACKET_BYTES_STATIC_SIZE) {
             qDebug() << typeid(*this).name()
             << __PRETTY_FUNCTION__
             << QString("data size must be %1 bytes").arg(PACKET_BYTES_STATIC_SIZE);
@@ -78,13 +83,22 @@ struct RequestMissingsPacket
             return;
         }
 
-        missingChunks = 0;
+        missingChunks.clear();
 
-        for (qsizetype i {0}; i < CHUNK_NUM_BYTES_SIZE; i++) {
-            T val = static_cast<T>(static_cast<unsigned char>(
-                arr[CHUNK_NUM_POSITION + i])
+        for (qsizetype i = 0; i < MISSING_CHUNK_NUMS; i++) {
+            T chunkNum = 0;
+            for (qsizetype j = 0; j < CHUNK_NUM_BYTES_SIZE; j++) {
+                // Big-endian: most significant byte first
+                T val = static_cast<T>(static_cast<unsigned char>(
+                    arr[MISSING_CHUNK_NUM_POSITION + (i * CHUNK_NUM_BYTES_SIZE) + j])
                                    );
-            missingChunks |= val << (i * 8);
+                chunkNum |= val << ((CHUNK_NUM_BYTES_SIZE - 1 - j) * 8);
+            }
+            // Stop if we encounter a zero chunk (no more missing chunks)
+            if (chunkNum == 0) {
+                break;
+            }
+            missingChunks.push_back(chunkNum);
         }
     }
 
@@ -93,7 +107,7 @@ private:
     std::vector<T> missingChunks;
 };
 
-template <typename T>
+template <typename T, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
 struct AbortReceivingPacket
 {
     QByteArray toQBa() {
@@ -108,7 +122,7 @@ private:
     static constexpr PacketType type = PacketType::AbortReceiving;
 };
 
-template <typename T>
+template <typename T, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
 struct ReadyToReceivePacket
 {
     QByteArray toQBa() {
@@ -123,7 +137,7 @@ private:
     static constexpr PacketType type = PacketType::ReadyToReceive;
 };
 
-template <typename T>
+template <typename T, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
 struct EndSendPacket
 {
     void setNumOfChunks(T num) {
@@ -171,7 +185,7 @@ private:
     uint32_t numOfChunks = 0;
 };
 
-template <typename T>
+template <typename T, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
 struct FirstSendPacket {
     void setNumOfChunks(T num) {
         numOfChunks = num;
@@ -208,10 +222,10 @@ struct FirstSendPacket {
     }
 
     void fromQBA(const QByteArray &arr) {
-        if (arr.size() > PACKET_DATA_SIZE) {
+        if (arr.size() > PACKET_BYTES_STATIC_SIZE) {
             qDebug() << typeid(*this).name()
             << __PRETTY_FUNCTION__
-            << QString("data size must be %1 bytes").arg(PACKET_DATA_SIZE);
+            << QString("data size must be %1 bytes").arg(PACKET_BYTES_STATIC_SIZE);
 
             return;
         }
@@ -241,7 +255,7 @@ private:
     T numOfBytes  = 0;
 };
 
-template <typename T>
+template <typename T, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
 struct DataSendPacket {
     void setNumOfChank(T num) {
         numOfChank = num;

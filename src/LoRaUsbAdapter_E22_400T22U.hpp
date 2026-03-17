@@ -240,7 +240,7 @@ private:
     /**
      * @brief Timeout in milliseconds for ACK reception
      */
-    static constexpr int TIMEOUT_MS = 1000;
+    static constexpr int TIMEOUT_MS = 2000;
 
     /**
      * @brief Timeout in milliseconds for serial write operations

@@ -8,6 +8,11 @@
 #include <QByteArray>
 #include <QQueue>
 #include <QHash>
+#include <QStateMachine>
+#include <QState>
+#include <QSignalTransition>
+#include <QEventTransition>
+#include <QEvent>
 
 
 /**
@@ -108,12 +113,75 @@ signals:
      */
     void packetSendProgress(int sentBytes, int totalBytes);
 
+    // State machine trigger signals
+    void startSending();
+    void readyToReceiveReceived();
+    void requestMissingsReceived(const QVector<uint32_t>& missingChunks);
+    void endSendReceived();
+    void abortReceivingReceived();
+    void firstSendPacketReceived(int totalChunks, int totalBytes);
+    void dataPacketReceived(uint32_t chunkNum, const QByteArray& data);
+    void sendTimeout();
+    void receiveTimeout();
+
+private slots:
+    void onReadyRead();
+    void handleSendTimeout();
+    void handleReceiveTimeout();
+
 private:
     /**
      * @brief Shared pointer to the QCrossPlatformSerialPort instance
      * @details Used for all serial communication with the LoRa module.
      */
     std::shared_ptr<QCrossPlatformSerialPort> m_serial;
+
+    QStateMachine* m_receive;
+    QState *m_rConnected;
+    QState *m_rFirstReceive;
+    QState *m_rReceivePackets;
+    QState *m_rReceiveMissingMsg;
+
+    void setupReceiveMachine();
+
+    QStateMachine* m_send;
+    QState *m_sConnected;
+    QState *m_sStartSending;
+    QState *m_sSendAll;
+    QState *m_sSendMissing;
+    QState *m_sResendMissing;
+
+    void setupSendMachine();
+
+    // Helper methods for packet transmission
+    void sendFirstPacket();
+    void sendDataPacket(int chunkIndex);
+    void sendEndPacket();
+    void sendReadyPacket();
+    void sendMissingPacket(const QVector<uint32_t>& missingChunks);
+    void sendAbortPacket();
+    bool checkAllChunksReceived() const;
+    QVector<uint32_t> getMissingChunks() const;
+    QByteArray reassembleData() const;
+
+    // State entry handlers
+    void onEnterConnected();
+    void onEnterStartSending();
+    void onEnterSendAll();
+    void onEnterSendMissing();
+    void onEnterResendMissing();
+    void onEnterRConnected();
+    void onEnterRFirstReceive();
+    void onEnterRReceivePackets();
+    void onEnterRReceiveMissingMsg();
+
+    // State machine helper methods
+    void transitionToConnected();
+    void transitionToRConnected();
+
+
+
+
 
     /**
      * @brief Current retry count for the chunk being sent
@@ -131,17 +199,35 @@ private:
     static constexpr int TIMEOUT_MS = 1000;
 
     /**
-     * @brief Timeout in milliseconds for serial write operations
-     */
-    static constexpr int WRITE_TIMEOUT_MS = 100;
-
-    /**
-     * @brief Timeout in milliseconds for ACK/PACKET_ACK write operations
-     */
-    static constexpr int ACK_WRITE_TIMEOUT_MS = 50;
-
-    /**
      * @brief Delay in milliseconds before resetting receive state after packet completion
      */
     static constexpr int RECEIVE_STATE_RESET_DELAY_MS = 2000;
+
+    // Data buffers
+    QQueue<QByteArray> m_sendChunks;              // Chunks to send
+    QMap<uint32_t, QByteArray> m_receiveBuffer;   // Received chunks (chunkNum -> data)
+    QByteArray m_packetBuffer;                    // Accumulate incoming bytes until 32 bytes
+
+    // Send state tracking
+    int m_currentChunkIndex = 0;                  // Current chunk being sent
+    int m_totalChunks = 0;                        // Total number of chunks
+    int m_totalBytes = 0;                         // Total bytes to send
+    QVector<int> m_missingChunksToResend;         // Missing chunks to resend
+    bool m_resendingMissing = false;             // Flag indicating if resending missing chunks
+    int m_resendMissingIndex = 0;                // Index in m_missingChunksToResend being sent
+
+    // Receive state tracking
+    int m_receiveTotalChunks = 0;                // Total chunks expected in receive
+    int m_receiveTotalBytes = 0;                 // Total bytes expected in receive
+
+    // Timer for timeout handling
+    QTimer* m_sendTimeoutTimer = nullptr;
+    QTimer* m_receiveTimeoutTimer = nullptr;
+
+    // Retry counters
+    int m_sendRetryCount = 0;
+    int m_receiveRetryCount = 0;
+
+    // Last data arrival time for receive timeout
+    qint64 m_lastDataArrivalTime = 0;
 };

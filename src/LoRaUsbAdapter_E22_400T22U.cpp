@@ -153,6 +153,7 @@ void LoRaUsbAdapter_E22_400T22U::sendChunk(int index) {
 }
 
 void LoRaUsbAdapter_E22_400T22U::onSendTimeout() {
+
     if (m_currentChunkIndex < 0) return;
 
     m_retries++;
