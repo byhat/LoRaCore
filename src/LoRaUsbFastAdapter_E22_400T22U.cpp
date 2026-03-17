@@ -125,8 +125,9 @@ void LoRaUsbFastAdapter_E22_400T22U::onReadyRead()
             }
             case LoRaProtocol::PacketType::ReadyToReceive: {
                 // ReadyToReceivePacket - sender handles this
-                // Stop the send timeout timer immediately to prevent race condition
-                // where the timer might fire before the state machine processes the transition
+                // Note: In the new continuous send flow, all chunks are sent in onEnterSendAll()
+                // without waiting for ReadyToReceivePacket. This packet is received from the receiver
+                // after the FirstSendPacket, but we don't need to wait for it to send data chunks.
                 m_sendTimeoutTimer->stop();
                 emit readyToReceiveReceived();
                 break;
@@ -255,9 +256,7 @@ void LoRaUsbFastAdapter_E22_400T22U::setupSendMachine()
     connect(m_sStartSending, &QState::exited, this, [this]() {
         m_sendTimeoutTimer->stop();
     });
-    connect(m_sSendAll, &QState::exited, this, [this]() {
-        m_sendTimeoutTimer->stop();
-    });
+    // Note: m_sSendAll no longer uses the timeout timer, so no stop needed on exit
     connect(m_sSendMissing, &QState::exited, this, [this]() {
         m_sendTimeoutTimer->stop();
     });
@@ -286,28 +285,6 @@ void LoRaUsbFastAdapter_E22_400T22U::setupSendMachine()
         }
     });
 
-    // m_sSendAll -> m_sSendAll (next chunk, more chunks to send)
-    // This is handled in onEnterSendAll by checking if more chunks need to be sent
-
-    // m_sSendAll -> m_sSendMissing (all chunks sent, send EndSendPacket)
-    // This is handled in onEnterSendAll by checking if all chunks are sent
-
-    // m_sSendAll -> m_sConnected (when timeout and retry count >= MAX_RETRIES)
-    connect(m_sendTimeoutTimer, &QTimer::timeout, this, [this]() {
-        if (m_send->configuration().contains(m_sSendAll)) {
-            if (m_sendRetryCount >= MAX_RETRIES) {
-                emit error("Timeout in send all state, max retries reached");
-                emit packetSent(false);
-                m_send->postEvent(new QEvent(TransitionToConnectedEvent));
-            } else {
-                m_sendRetryCount++;
-                // Resend current chunk (decrement index first since it was incremented in onEnterSendAll)
-                m_currentChunkIndex = qMax(0, m_currentChunkIndex - 1);
-                sendDataPacket(m_currentChunkIndex);
-                m_sendTimeoutTimer->start(TIMEOUT_MS);
-            }
-        }
-    });
 
     // m_sSendMissing -> m_sConnected (when RequestMissingsPacket with all zeros received)
     // m_sSendMissing -> m_sSendAll (when RequestMissingsPacket with missing chunks received)
@@ -398,6 +375,10 @@ void LoRaUsbFastAdapter_E22_400T22U::setupSendMachine()
 
 void LoRaUsbFastAdapter_E22_400T22U::onEnterConnected()
 {
+    qDebug() << typeid(*this).name()
+    << __PRETTY_FUNCTION__
+    << QString("Switched to mode %1").arg(__PRETTY_FUNCTION__);
+
     // Reset all variables, stop timer
     m_sendChunks.clear();
     m_receiveBuffer.clear();
@@ -413,6 +394,10 @@ void LoRaUsbFastAdapter_E22_400T22U::onEnterConnected()
 
 void LoRaUsbFastAdapter_E22_400T22U::onEnterStartSending()
 {
+    qDebug() << typeid(*this).name()
+    << __PRETTY_FUNCTION__
+    << QString("Switched to mode %1").arg(__PRETTY_FUNCTION__);
+
     // Send FirstSendPacket with total chunks and total bytes, start timeout timer, reset retry count
     sendFirstPacket();
     m_sendRetryCount = 0;
@@ -421,24 +406,27 @@ void LoRaUsbFastAdapter_E22_400T22U::onEnterStartSending()
 
 void LoRaUsbFastAdapter_E22_400T22U::onEnterSendAll()
 {
-    // Send current DataSendPacket chunk, start timeout timer, reset retry count
-    if (m_currentChunkIndex < m_sendChunks.size()) {
-        sendDataPacket(m_currentChunkIndex);
-        m_sendRetryCount = 0;
-        m_sendTimeoutTimer->start(TIMEOUT_MS);
-        // Move to next chunk
-        m_currentChunkIndex++;
+    qDebug() << typeid(*this).name()
+    << __PRETTY_FUNCTION__
+             << QString("Switched to mode %1, sending all chunks continuously").arg(__PRETTY_FUNCTION__);
 
-        // Check if all chunks have been sent
-        if (m_currentChunkIndex >= m_sendChunks.size()) {
-            // All chunks sent, transition to SendMissing state
-            m_send->postEvent(new QEvent(TransitionToSendMissingEvent));
-        }
+    // Send ALL data packets in a continuous loop without waiting for ReadyToReceivePacket
+    while (m_currentChunkIndex < m_sendChunks.size()) {
+        sendDataPacket(m_currentChunkIndex);
+        m_currentChunkIndex++;
     }
+
+    // After all chunks sent, send EndSendPacket and transition to SendMissing state
+    sendEndPacket();
+    m_send->postEvent(new QEvent(TransitionToSendMissingEvent));
 }
 
 void LoRaUsbFastAdapter_E22_400T22U::onEnterSendMissing()
 {
+    qDebug() << typeid(*this).name()
+    << __PRETTY_FUNCTION__
+    << QString("Switched to mode %1").arg(__PRETTY_FUNCTION__);
+
     // Send EndSendPacket, start timeout timer, reset retry count
     sendEndPacket();
     m_sendRetryCount = 0;
@@ -447,6 +435,10 @@ void LoRaUsbFastAdapter_E22_400T22U::onEnterSendMissing()
 
 void LoRaUsbFastAdapter_E22_400T22U::onEnterResendMissing()
 {
+    qDebug() << typeid(*this).name()
+    << __PRETTY_FUNCTION__
+    << QString("Switched to mode %1").arg(__PRETTY_FUNCTION__);
+
     // Send the current missing chunk from m_missingChunksToResend
     if (m_resendMissingIndex < m_missingChunksToResend.size()) {
         int chunkIndex = m_missingChunksToResend[m_resendMissingIndex];
@@ -470,6 +462,10 @@ void LoRaUsbFastAdapter_E22_400T22U::onEnterResendMissing()
 
 void LoRaUsbFastAdapter_E22_400T22U::onEnterRConnected()
 {
+    qDebug() << typeid(*this).name()
+    << __PRETTY_FUNCTION__
+    << QString("Switched to mode %1").arg(__PRETTY_FUNCTION__);
+
     // Clear m_receiveBuffer, m_packetBuffer, stop timer
     m_receiveBuffer.clear();
     m_packetBuffer.clear();
@@ -478,6 +474,10 @@ void LoRaUsbFastAdapter_E22_400T22U::onEnterRConnected()
 
 void LoRaUsbFastAdapter_E22_400T22U::onEnterRFirstReceive()
 {
+    qDebug() << typeid(*this).name()
+    << __PRETTY_FUNCTION__
+    << QString("Switched to mode %1").arg(__PRETTY_FUNCTION__);
+
     // Send ReadyToReceivePacket, start timeout timer, reset retry count
     sendReadyPacket();
     m_receiveRetryCount = 0;
@@ -486,6 +486,10 @@ void LoRaUsbFastAdapter_E22_400T22U::onEnterRFirstReceive()
 
 void LoRaUsbFastAdapter_E22_400T22U::onEnterRReceivePackets()
 {
+    qDebug() << typeid(*this).name()
+    << __PRETTY_FUNCTION__
+    << QString("Switched to mode %1").arg(__PRETTY_FUNCTION__);
+
     // Start timeout timer
     // The actual packet storage is handled in onReadyRead via dataPacketReceived signal
     m_receiveTimeoutTimer->start(TIMEOUT_MS);
@@ -493,6 +497,10 @@ void LoRaUsbFastAdapter_E22_400T22U::onEnterRReceivePackets()
 
 void LoRaUsbFastAdapter_E22_400T22U::onEnterRReceiveMissingMsg()
 {
+    qDebug() << typeid(*this).name()
+    << __PRETTY_FUNCTION__
+    << QString("Switched to mode %1").arg(__PRETTY_FUNCTION__);
+
     // Check if all chunks received, prepare RequestMissingsPacket, send it, start timeout timer, reset retry count
     QVector<uint32_t> missingChunks = getMissingChunks();
     if (missingChunks.isEmpty()) {
