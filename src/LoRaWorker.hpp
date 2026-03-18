@@ -2,7 +2,7 @@
 
 #include <memory>
 #include "QCrossPlatformSerialPort.hpp"
-#include "LoRaUsbFastAdapter_E22_400T22U.hpp"
+#include "LoRaUsbAdapter_E22_400T22U.hpp"
 
 /**
  * @file LoRaWorker.hpp
@@ -129,5 +129,5 @@ private:
      * @details Handles low-level packet framing, chunking, and transmission
      *          protocol for the E22-400T22U LoRa module.
      */
-    std::unique_ptr<LoRaUsbFastAdapter_E22_400T22U> m_transport;
+    std::unique_ptr<LoRaUsbAdapter_E22_400T22U> m_transport;
 };

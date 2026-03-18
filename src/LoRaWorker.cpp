@@ -3,7 +3,7 @@
 LoRaWorker::LoRaWorker(QObject *parent) :
     QObject(parent)
     , m_serial { new QCrossPlatformSerialPort(this) }
-    , m_transport { new LoRaUsbFastAdapter_E22_400T22U(m_serial, this) }
+    , m_transport { new LoRaUsbAdapter_E22_400T22U(m_serial, this) }
 {
 }
 
@@ -38,15 +38,15 @@ void LoRaWorker::openPort(const QString &portName, qint32 baud) {
     }
 
 
-    connect(m_transport.get(), &LoRaUsbFastAdapter_E22_400T22U::packetSent,
+    connect(m_transport.get(), &LoRaUsbAdapter_E22_400T22U::packetSent,
             this, &LoRaWorker::packetSent);
-    connect(m_transport.get(), &LoRaUsbFastAdapter_E22_400T22U::packetReceived,
+    connect(m_transport.get(), &LoRaUsbAdapter_E22_400T22U::packetReceived,
             this, &LoRaWorker::packetReceived);
-    connect(m_transport.get(), &LoRaUsbFastAdapter_E22_400T22U::packetProgress,
+    connect(m_transport.get(), &LoRaUsbAdapter_E22_400T22U::packetProgress,
             this, &LoRaWorker::packetReceiveProgress);
-    connect(m_transport.get(), &LoRaUsbFastAdapter_E22_400T22U::packetSendProgress,
+    connect(m_transport.get(), &LoRaUsbAdapter_E22_400T22U::packetSendProgress,
             this, &LoRaWorker::packetSendProgress);
-    connect(m_transport.get(), &LoRaUsbFastAdapter_E22_400T22U::error,
+    connect(m_transport.get(), &LoRaUsbAdapter_E22_400T22U::error,
             this, &LoRaWorker::errorOccurred);
 
     emit portOpened(true);
