@@ -56,10 +56,10 @@ void LoRaUsbFastAdapter_E22_400T22U::onReadyRead()
         m_packetBuffer.remove(0, LoRaProtocol::PACKET_BYTES_STATIC_SIZE);
 
         LoRaProtocol::PacketType packetType = static_cast<LoRaProtocol::PacketType>(packet[LoRaProtocol::PACKET_TYPE_POSITION]);
-        qDebug() << typeid(*this).name()
-                 << __PRETTY_FUNCTION__
-                 << QString("Receive message type: %1 value: %2 buffer size: %3").arg(std::format("{}", packetType))
-                                                                .arg(QString::number(packet[LoRaProtocol::PACKET_TYPE_POSITION]));
+        // qDebug() << typeid(*this).name()
+        //          << __PRETTY_FUNCTION__
+        //          << QString("Receive message type: %1 value: %2 buffer size: %3").arg(std::format("{}", packetType))
+        //                                                         .arg(QString::number(packet[LoRaProtocol::PACKET_TYPE_POSITION]));
 
 
 

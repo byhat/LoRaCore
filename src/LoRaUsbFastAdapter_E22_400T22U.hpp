@@ -190,12 +190,12 @@ private:
     /**
      * @brief Maximum number of retry attempts per chunk
      */
-    static constexpr int MAX_RETRIES = 1;//5;
+    static constexpr int MAX_RETRIES = 1;
 
     /**
      * @brief Timeout in milliseconds for ACK reception
      */
-    static constexpr int TIMEOUT_MS = 10000;
+    static constexpr int TIMEOUT_MS = 1000;
 
     /**
      * @brief Number of chunks to send in each batch
