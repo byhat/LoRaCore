@@ -37,6 +37,11 @@ void LoRaUsbFastAdapter_E22_400T22U::sendPacket(const QByteArray &data)
     m_missingChunksToResend.clear();
     m_resendingMissing = false;
 
+    // Initialize batch tracking
+    m_currentBatchIndex = 0;
+    m_currentBatchStart = 0;
+    m_currentBatchEnd = qMin(BATCH_SIZE, m_totalChunks);
+
     emit startSending();
 }
 
@@ -53,7 +58,7 @@ void LoRaUsbFastAdapter_E22_400T22U::onReadyRead()
         LoRaProtocol::PacketType packetType = static_cast<LoRaProtocol::PacketType>(packet[LoRaProtocol::PACKET_TYPE_POSITION]);
         qDebug() << typeid(*this).name()
                  << __PRETTY_FUNCTION__
-                 << QString("Receive message type: %1\nvalue: %2\nbuffer size: %3").arg(std::format("{}", packetType))
+                 << QString("Receive message type: %1 value: %2 buffer size: %3").arg(std::format("{}", packetType))
                                                                 .arg(QString::number(packet[LoRaProtocol::PACKET_TYPE_POSITION]));
 
 
@@ -160,6 +165,7 @@ void LoRaUsbFastAdapter_E22_400T22U::setupReceiveMachine()
     m_rFirstReceive  ->addTransition(this, &LoRaUsbFastAdapter_E22_400T22U::dataPacketReceived,      m_rReceivePackets);
     m_rReceivePackets->addTransition(this, &LoRaUsbFastAdapter_E22_400T22U::dataPacketReceived,      m_rReceivePackets);
     m_rReceivePackets->addTransition(this, &LoRaUsbFastAdapter_E22_400T22U::endSendReceived,         m_rReceiveMissingMsg);
+    m_rReceiveMissingMsg->addTransition(this, &LoRaUsbFastAdapter_E22_400T22U::dataPacketReceived,      m_rReceivePackets);
 
     // Drop all m_rConnected
     m_rFirstReceive     ->addTransition(this, &LoRaUsbFastAdapter_E22_400T22U::abortReceivingReceived, m_rConnected);
@@ -316,7 +322,8 @@ void LoRaUsbFastAdapter_E22_400T22U::setupSendMachine()
                 allReceived = true;
                 qDebug() << typeid(*this).name()
                          << __PRETTY_FUNCTION__
-                         << QString("RequestMissings received with empty vector - transitioning to Connected");
+                         << QString("RequestMissings received with empty vector - batch %2 complete")
+                            .arg(m_currentBatchIndex);
             } else {
                 // Check if ALL elements are zero (all data received)
                 allReceived = true;
@@ -329,16 +336,37 @@ void LoRaUsbFastAdapter_E22_400T22U::setupSendMachine()
                 if (allReceived) {
                     qDebug() << typeid(*this).name()
                              << __PRETTY_FUNCTION__
-                             << QString("RequestMissings received with all zeros - transitioning to Connected");
+                             << QString("RequestMissings received with all zeros - batch %1 complete")
+                                .arg(m_currentBatchIndex);
                 }
             }
             if (allReceived) {
-                // All data received, transition to Connected
-                emit packetSent(true);
-                qDebug() << typeid(*this).name()
-                         << __PRETTY_FUNCTION__
-                         << QString("Emitting transitionToConnectedSignal - all data received in SendAll");
-                emit transitionToConnectedSignal();
+                // Current batch complete, check if all batches complete
+                if (m_currentBatchEnd >= m_totalChunks) {
+                    // All batches complete, transition to Connected
+                    emit packetSent(true);
+                    qDebug() << typeid(*this).name()
+                             << __PRETTY_FUNCTION__
+                             << QString("Emitting transitionToConnectedSignal - all batches complete");
+                    emit transitionToConnectedSignal();
+                } else {
+                    // Move to next batch
+                    m_currentBatchIndex++;
+                    m_currentBatchStart = m_currentBatchEnd;
+                    m_currentBatchEnd = qMin(m_currentBatchStart + BATCH_SIZE, m_totalChunks);
+                    m_currentChunkIndex = m_currentBatchStart;
+                    qDebug() << typeid(*this).name()
+                             << __PRETTY_FUNCTION__
+                             << QString("Moving to batch %1 (chunks %2-%3)")
+                                .arg(m_currentBatchIndex).arg(m_currentBatchStart).arg(m_currentBatchEnd - 1);
+                    // Send data packets for the next batch
+                    while (m_currentChunkIndex < m_currentBatchEnd) {
+                        sendDataPacket(m_currentChunkIndex);
+                        m_currentChunkIndex++;
+                    }
+                    // Send EndSendPacket to signal receiver to transition back to RReceivePackets
+                    sendEndPacket();
+                }
             } else {
                 // Missing chunks, need to resend them
                 m_missingChunksToResend.clear();
@@ -361,7 +389,8 @@ void LoRaUsbFastAdapter_E22_400T22U::setupSendMachine()
                 allReceived = true;
                 qDebug() << typeid(*this).name()
                          << __PRETTY_FUNCTION__
-                         << QString("RequestMissings received with empty vector - transitioning to Connected");
+                         << QString("RequestMissings received with empty vector - batch %1 complete")
+                            .arg(m_currentBatchIndex);
             } else {
                 // Check if ALL elements are zero (all data received)
                 allReceived = true;
@@ -374,16 +403,37 @@ void LoRaUsbFastAdapter_E22_400T22U::setupSendMachine()
                 if (allReceived) {
                     qDebug() << typeid(*this).name()
                              << __PRETTY_FUNCTION__
-                             << QString("RequestMissings received with all zeros - transitioning to Connected");
+                             << QString("RequestMissings received with all zeros - batch %1 complete")
+                                .arg(m_currentBatchIndex);
                 }
             }
             if (allReceived) {
-                // All data received, transition to Connected
-                emit packetSent(true);
-                qDebug() << typeid(*this).name()
-                         << __PRETTY_FUNCTION__
-                         << QString("Emitting transitionToConnectedSignal - all data received in SendMissing");
-                emit transitionToConnectedSignal();
+                // Current batch complete, check if all batches complete
+                if (m_currentBatchEnd >= m_totalChunks) {
+                    // All batches complete, transition to Connected
+                    emit packetSent(true);
+                    qDebug() << typeid(*this).name()
+                             << __PRETTY_FUNCTION__
+                             << QString("Emitting transitionToConnectedSignal - all batches complete");
+                    emit transitionToConnectedSignal();
+                } else {
+                    // Move to next batch
+                    m_currentBatchIndex++;
+                    m_currentBatchStart = m_currentBatchEnd;
+                    m_currentBatchEnd = qMin(m_currentBatchStart + BATCH_SIZE, m_totalChunks);
+                    m_currentChunkIndex = m_currentBatchStart;
+                    qDebug() << typeid(*this).name()
+                             << __PRETTY_FUNCTION__
+                             << QString("Moving to batch %1 (chunks %2-%3)")
+                                .arg(m_currentBatchIndex).arg(m_currentBatchStart).arg(m_currentBatchEnd - 1);
+                    // Send data packets for the next batch
+                    while (m_currentChunkIndex < m_currentBatchEnd) {
+                        sendDataPacket(m_currentChunkIndex);
+                        m_currentChunkIndex++;
+                    }
+                    // Send EndSendPacket to signal receiver to transition back to RReceivePackets
+                    sendEndPacket();
+                }
             } else {
                 // Missing chunks, need to resend them
                 m_missingChunksToResend.clear();
@@ -429,6 +479,11 @@ void LoRaUsbFastAdapter_E22_400T22U::onEnterConnected()
     m_resendingMissing = false;
     m_sendRetryCount = 0;
     m_sendTimeoutTimer->stop();
+
+    // Reset batch tracking
+    m_currentBatchIndex = 0;
+    m_currentBatchStart = 0;
+    m_currentBatchEnd = 0;
 }
 
 void LoRaUsbFastAdapter_E22_400T22U::onEnterStartSending()
@@ -446,14 +501,16 @@ void LoRaUsbFastAdapter_E22_400T22U::onEnterSendAll()
 {
     qDebug() << typeid(*this).name()
     << __PRETTY_FUNCTION__
-             << QString("Switched to mode %1, sending all chunks continuously").arg(__PRETTY_FUNCTION__);
+             << QString("Switched to mode %1, sending batch %2 (chunks %3-%4)").arg(__PRETTY_FUNCTION__)
+                 .arg(m_currentBatchIndex).arg(m_currentBatchStart).arg(m_currentBatchEnd - 1);
 
-    while (m_currentChunkIndex < m_sendChunks.size()) {
+    // Send only the current batch of chunks
+    while (m_currentChunkIndex < m_currentBatchEnd) {
         sendDataPacket(m_currentChunkIndex);
         m_currentChunkIndex++;
     }
 
-    // After all chunks sent, send EndSendPacket
+    // After batch sent, send EndSendPacket
     sendEndPacket();
 }
 
@@ -505,6 +562,10 @@ void LoRaUsbFastAdapter_E22_400T22U::onEnterRConnected()
     m_receiveBuffer.clear();
     m_packetBuffer.clear();
     m_receiveTimeoutTimer->stop();
+
+    // Reset batch tracking
+    m_receiveCurrentBatchStart = 0;
+    m_receiveCurrentBatchEnd = 0;
 }
 
 void LoRaUsbFastAdapter_E22_400T22U::onEnterRFirstReceive()
@@ -512,6 +573,10 @@ void LoRaUsbFastAdapter_E22_400T22U::onEnterRFirstReceive()
     qDebug() << typeid(*this).name()
     << __PRETTY_FUNCTION__
     << QString("Switched to mode %1").arg(__PRETTY_FUNCTION__);
+
+    // Initialize batch tracking for receiving
+    m_receiveCurrentBatchStart = 0;
+    m_receiveCurrentBatchEnd = qMin(BATCH_SIZE, m_receiveTotalChunks);
 
     sendReadyPacket();
     m_receiveRetryCount = 0;
@@ -529,24 +594,64 @@ void LoRaUsbFastAdapter_E22_400T22U::onEnterRReceiveMissingMsg()
 {
     qDebug() << typeid(*this).name()
     << __PRETTY_FUNCTION__
-    << QString("Switched to mode %1").arg(__PRETTY_FUNCTION__);
+    << QString("Switched to mode %1, current batch: %2-%3").arg(__PRETTY_FUNCTION__)
+        .arg(m_receiveCurrentBatchStart).arg(m_receiveCurrentBatchEnd - 1);
 
-    // Check if all chunks received, prepare RequestMissingsPacket, send it, start timeout timer, reset retry count
-    QVector<uint32_t> missingChunks = getMissingChunks();
-    if (missingChunks.isEmpty()) {
-        // All chunks received, send RequestMissingsPacket with all zeros
-        QVector<uint32_t> emptyMissing;
-        for (int i = 0; i < LoRaProtocol::MISSING_CHUNK_NUMS; ++i) {
-            emptyMissing.append(0);
+    // Check if all chunks in current batch are received
+    QVector<uint32_t> missingChunksInBatch;
+    for (uint32_t i = static_cast<uint32_t>(m_receiveCurrentBatchStart);
+         i < static_cast<uint32_t>(m_receiveCurrentBatchEnd); ++i) {
+        if (!m_receiveBuffer.contains(i)) {
+            missingChunksInBatch.append(i);
         }
-        sendMissingPacket(emptyMissing);
-        // Emit packetReceived signal with reassembled data
-        QByteArray receivedData = reassembleData();
-        emit packetReceived(receivedData);
+    }
 
+    if (missingChunksInBatch.isEmpty()) {
+        // All chunks in current batch received
+        qDebug() << typeid(*this).name()
+                 << __PRETTY_FUNCTION__
+                 << QString("All chunks in batch %1-%2 received (total: %3/%4)")
+                    .arg(m_receiveCurrentBatchStart).arg(m_receiveCurrentBatchEnd - 1)
+                    .arg(m_receiveCurrentBatchEnd).arg(m_receiveTotalChunks);
+        
+        if (m_receiveCurrentBatchEnd >= m_receiveTotalChunks) {
+            // All batches complete, send RequestMissingsPacket with all zeros and emit packetReceived
+            qDebug() << typeid(*this).name()
+                     << __PRETTY_FUNCTION__
+                     << QString("All batches complete! Sending RequestMissings with all zeros and emitting packetReceived");
+            QVector<uint32_t> emptyMissing;
+            for (int i = 0; i < LoRaProtocol::MISSING_CHUNK_NUMS; ++i) {
+                emptyMissing.append(0);
+            }
+            sendMissingPacket(emptyMissing);
+            QByteArray receivedData = reassembleData();
+            emit packetReceived(receivedData);
+        } else {
+            // Current batch complete but not all batches, send RequestMissings with empty missing chunks
+            // The sender will move to the next batch when it receives RequestMissings with all zeros
+            qDebug() << typeid(*this).name()
+                     << __PRETTY_FUNCTION__
+                     << QString("Current batch %1-%2 complete, sending RequestMissings with empty missing chunks")
+                    .arg(m_receiveCurrentBatchStart).arg(m_receiveCurrentBatchEnd - 1);
+            QVector<uint32_t> emptyMissing;
+            for (int i = 0; i < LoRaProtocol::MISSING_CHUNK_NUMS; ++i) {
+                emptyMissing.append(0);
+            }
+            sendMissingPacket(emptyMissing);
+            // Update batch boundaries for next iteration (will be used when entering this state again)
+            m_receiveCurrentBatchStart = m_receiveCurrentBatchEnd;
+            m_receiveCurrentBatchEnd = qMin(m_receiveCurrentBatchStart + BATCH_SIZE, m_receiveTotalChunks);
+            m_receiveRetryCount = 0;
+            m_receiveTimeoutTimer->start(TIMEOUT_MS);
+        }
     } else {
-        // Missing chunks, send RequestMissingsPacket with missing chunk numbers
-        sendMissingPacket(missingChunks);
+        // Missing chunks in current batch, send RequestMissingsPacket
+        qDebug() << typeid(*this).name()
+                 << __PRETTY_FUNCTION__
+                 << QString("Missing chunks in batch %1-%2: %3. Sending RequestMissings.")
+                    .arg(m_receiveCurrentBatchStart).arg(m_receiveCurrentBatchEnd - 1)
+                    .arg(missingChunksInBatch.size());
+        sendMissingPacket(missingChunksInBatch);
         m_receiveRetryCount = 0;
         m_receiveTimeoutTimer->start(TIMEOUT_MS);
     }
@@ -594,7 +699,9 @@ void LoRaUsbFastAdapter_E22_400T22U::sendEndPacket()
     auto sent = m_serial->write(data);
     qDebug() << typeid(*this).name()
              << __PRETTY_FUNCTION__
-             << QString("Sent end packet, total chunks %1, writed %2 bytes").arg(m_totalChunks).arg(sent);
+             << QString("Sent end packet, batch %1 (chunks %2-%3), total chunks %4, writed %5 bytes")
+                .arg(m_currentBatchIndex).arg(m_currentBatchStart).arg(m_currentBatchEnd - 1)
+                .arg(m_totalChunks).arg(sent);
 }
 
 void LoRaUsbFastAdapter_E22_400T22U::sendReadyPacket()

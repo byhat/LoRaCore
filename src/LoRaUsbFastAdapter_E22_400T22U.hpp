@@ -197,6 +197,11 @@ private:
      */
     static constexpr int TIMEOUT_MS = 10000;
 
+    /**
+     * @brief Number of chunks to send in each batch
+     */
+    static constexpr int BATCH_SIZE = 10;
+
     // Data buffers
     QQueue<QByteArray> m_sendChunks;              // Chunks to send
     QMap<uint32_t, QByteArray> m_receiveBuffer;   // Received chunks (chunkNum -> data)
@@ -210,9 +215,16 @@ private:
     bool m_resendingMissing = false;             // Flag indicating if resending missing chunks
     int m_resendMissingIndex = 0;                // Index in m_missingChunksToResend being sent
 
+    // Batch-based sending tracking
+    int m_currentBatchIndex = 0;                 // Current batch index being sent
+    int m_currentBatchStart = 0;                 // Starting chunk index of current batch
+    int m_currentBatchEnd = 0;                   // Ending chunk index of current batch (exclusive)
+
     // Receive state tracking
     int m_receiveTotalChunks = 0;                // Total chunks expected in receive
     int m_receiveTotalBytes = 0;                 // Total bytes expected in receive
+    int m_receiveCurrentBatchStart = 0;         // Starting chunk index of current batch being received
+    int m_receiveCurrentBatchEnd = 0;           // Ending chunk index of current batch being received (exclusive)
 
     // Timer for timeout handling
     QTimer* m_sendTimeoutTimer = nullptr;
