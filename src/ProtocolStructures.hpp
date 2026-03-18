@@ -258,12 +258,12 @@ private:
 
 template <typename T, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
 struct DataSendPacket {
-    void setNumOfChank(T num) {
-        numOfChank = num;
+    void setNumOfChunk(T num) {
+        numOfChunk = num;
     }
 
-    T getNumOfChank() {
-        return numOfChank;
+    T getNumOfChunk() {
+        return numOfChunk;
     }
 
     QByteArray getData() {
@@ -291,7 +291,7 @@ struct DataSendPacket {
         arr[PACKET_TYPE_POSITION] = static_cast<char>(type);
 
         for (qsizetype i {0}; i < CHUNK_NUM_BYTES_SIZE; i++) {
-            char val = static_cast<char>(numOfChank >> (i * 8) & 0xFF);
+            char val = static_cast<char>(numOfChunk >> (i * 8) & 0xFF);
             arr[CHUNK_NUM_POSITION + i] = val;
         }
 
@@ -301,21 +301,21 @@ struct DataSendPacket {
     }
 
     void fromQBA(const QByteArray &arr) {
-        numOfChank = 0;
+        numOfChunk = 0;
 
         for (qsizetype i {0}; i < CHUNK_NUM_BYTES_SIZE; i++) {
-            decltype(numOfChank) val = static_cast<decltype(numOfChank)>(
+            decltype(numOfChunk) val = static_cast<decltype(numOfChunk)>(
                 static_cast<unsigned char>(
                     arr[CHUNK_NUM_POSITION + i])
                 );
-            numOfChank |= val << (i * 8);
+            numOfChunk |= val << (i * 8);
         }
 
         data = arr.mid(PACKET_DATA_POSITION);
     }
 private:
     static constexpr PacketType type = PacketType::Data;
-    uint32_t numOfChank = 0;
+    uint32_t numOfChunk = 0;
     QByteArray data;
 };
 

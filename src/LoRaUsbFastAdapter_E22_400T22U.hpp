@@ -121,7 +121,7 @@ signals:
     void requestMissingsReceived(const QVector<uint32_t>& missingChunks);
     void endSendReceived();
     void abortReceivingReceived();
-    void firstSendPacketReceived(int totalChunks, int totalBytes);
+    void firstSendPacketReceived();
     void dataPacketReceived(uint32_t chunkNum, const QByteArray& data);
     void sendTimeout();
     void receiveTimeout();
@@ -129,8 +129,6 @@ signals:
 
 private slots:
     void onReadyRead();
-    void handleSendTimeout();
-    void handleReceiveTimeout();
 
 private:
     /**
@@ -180,8 +178,6 @@ private:
 
     // State machine helper methods
     void transitionToConnected();
-    void transitionToRConnected();
-
 
 
 
@@ -194,17 +190,12 @@ private:
     /**
      * @brief Maximum number of retry attempts per chunk
      */
-    static constexpr int MAX_RETRIES = 5;
+    static constexpr int MAX_RETRIES = 1;//5;
 
     /**
      * @brief Timeout in milliseconds for ACK reception
      */
-    static constexpr int TIMEOUT_MS = 1000;
-
-    /**
-     * @brief Delay in milliseconds before resetting receive state after packet completion
-     */
-    static constexpr int RECEIVE_STATE_RESET_DELAY_MS = 2000;
+    static constexpr int TIMEOUT_MS = 10000;
 
     // Data buffers
     QQueue<QByteArray> m_sendChunks;              // Chunks to send
