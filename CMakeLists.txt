@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(FetchContent)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Test SerialPort StateMachine)
+find_package(Qt6 REQUIRED COMPONENTS Core Test)
 
 if(BUILD_TESTS)
     # Fetch Google Test
@@ -49,7 +49,6 @@ set_target_properties(LoRaCore PROPERTIES AUTOMOC ON)
 target_link_libraries(LoRaCore
     PUBLIC
         Qt6::Core
-        Qt6::StateMachine
         QCrossPlatformSerial
 )
 
@@ -69,7 +68,6 @@ if(BUILD_TESTS)
             gtest
             gtest_main
             Qt6::Core
-            Qt6::StateMachine
             Qt6::Test
             QCrossPlatformSerial
             LoRaCore
