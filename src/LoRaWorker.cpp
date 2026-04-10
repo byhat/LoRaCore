@@ -19,6 +19,7 @@ void LoRaWorker::openPort(const QString &portName, qint32 baud) {
 
     m_serial->setPortName(portName);
     m_serial->setBaudRate(baud);
+    m_serial->setReadBufferSize(32);
     m_serial->setDataBits(QCrossPlatformDataBits::Data8);
     m_serial->setParity(QCrossPlatformParity::NoParity);
     m_serial->setStopBits(QCrossPlatformStopBits::OneStop);
