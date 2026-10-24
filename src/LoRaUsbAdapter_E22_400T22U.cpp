@@ -1,18 +1,26 @@
 #include "LoRaUsbAdapter_E22_400T22U.hpp"
 #include <QDebug>
-#include <QEventLoop>
 
-LoRaUsbAdapter_E22_400T22U::LoRaUsbAdapter_E22_400T22U(std::shared_ptr<QCrossPlatformSerialPort> serial,
+LoRaUsbAdapter_E22_400T22U::LoRaUsbAdapter_E22_400T22U(std::shared_ptr<cs::SerialPort> serial,
                                                        QObject *parent)
     : QObject(parent)
     , m_serial(serial)
 {
     if (!m_serial) {
-        qWarning() << "LoRaUsbAdapter_E22_400T22U: QCrossPlatformSerialPort is null!";
+        qWarning() << "LoRaUsbAdapter_E22_400T22U: cs::SerialPort is null!";
         return;
     }
 
-    connect(m_serial.get(), &QCrossPlatformSerialPort::readyRead, this, &LoRaUsbAdapter_E22_400T22U::onReadyRead);
+    // cs::SerialPort callbacks fire on the library's internal I/O thread;
+    // hop back into this object's thread through queued signal connections.
+    m_serial->registerOnReadyRead([this]() { emit serialReadyRead(); });
+    m_serial->registerOnError([this](cs::SerialError err) {
+        emit serialErrorOccurred(QString("Serial error %1").arg(static_cast<int>(err)));
+    });
+    connect(this, &LoRaUsbAdapter_E22_400T22U::serialReadyRead,
+            this, &LoRaUsbAdapter_E22_400T22U::onReadyRead);
+    connect(this, &LoRaUsbAdapter_E22_400T22U::serialErrorOccurred,
+            this, &LoRaUsbAdapter_E22_400T22U::error);
     m_timer.setSingleShot(true);
     connect(&m_timer, &QTimer::timeout, this, &LoRaUsbAdapter_E22_400T22U::onSendTimeout);
 }
@@ -105,38 +113,14 @@ void LoRaUsbAdapter_E22_400T22U::sendChunk(int index) {
         return;
     }
 
-    qint64 written = m_serial->write(frame);
+    // cs::SerialPort::write is synchronous - no bytesWritten wait needed
+    qint64 written = m_serial->write(frame.constData(), static_cast<std::size_t>(frame.size()));
     if (written != frame.size()) {
         emit error("Serial write failed");
         emit packetSent(false);
         resetSendState();
         return;
     }
-
-    // Simulate blocking waitForBytesWritten using QEventLoop
-    QEventLoop loop;
-    QTimer timeoutTimer;
-    timeoutTimer.setSingleShot(true);
-    timeoutTimer.setInterval(100); // timeout in ms
-
-    QObject::connect(m_serial.get(), &QCrossPlatformSerialPort::bytesWritten,
-                     &loop, &QEventLoop::quit, Qt::UniqueConnection);
-    QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, &QEventLoop::quit);
-
-    timeoutTimer.start();
-    loop.exec();
-
-    QObject::disconnect(m_serial.get(), &QCrossPlatformSerialPort::bytesWritten,
-                        &loop, &QEventLoop::quit);
-
-    if (!timeoutTimer.isActive()) {
-        // Timeout occurred
-        emit error("Write timeout");
-        emit packetSent(false);
-        resetSendState();
-        return;
-    }
-    timeoutTimer.stop();
 
     m_timer.start(TIMEOUT_MS);
 }
@@ -157,7 +141,9 @@ void LoRaUsbAdapter_E22_400T22U::onSendTimeout() {
 
 void LoRaUsbAdapter_E22_400T22U::onReadyRead() {
     static QByteArray buffer;
-    buffer.append(m_serial->readAll());
+    const std::vector<std::uint8_t> incoming = m_serial->readAll();
+    buffer.append(reinterpret_cast<const char *>(incoming.data()),
+                  static_cast<qsizetype>(incoming.size()));
 
     while (buffer.size() >= 5) {
         quint8 len = static_cast<quint8>(buffer[3]);
@@ -191,29 +177,8 @@ void LoRaUsbAdapter_E22_400T22U::onReadyRead() {
             }
 
             QByteArray ack = makeFrame(FrameType::ACK, seq, total);
-            m_serial->write(ack);
-
-            // Simulate blocking waitForBytesWritten using QEventLoop
-            QEventLoop loop;
-            QTimer timeoutTimer;
-            timeoutTimer.setSingleShot(true);
-            timeoutTimer.setInterval(50); // timeout in ms
-
-            QObject::connect(m_serial.get(), &QCrossPlatformSerialPort::bytesWritten,
-                             &loop, &QEventLoop::quit, Qt::UniqueConnection);
-            QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, &QEventLoop::quit);
-
-            timeoutTimer.start();
-            loop.exec();
-
-            QObject::disconnect(m_serial.get(), &QCrossPlatformSerialPort::bytesWritten,
-                                &loop, &QEventLoop::quit);
-
-            if (!timeoutTimer.isActive()) {
-                // Timeout occurred - log warning but continue
-                qWarning() << "ACK write timeout";
-            }
-            timeoutTimer.stop();
+            // write() is synchronous - no bytesWritten wait needed
+            m_serial->write(ack.constData(), static_cast<std::size_t>(ack.size()));
 
             if (!m_recvState.chunks.contains(seq)) {
                 m_recvState.chunks[seq] = payload;
@@ -264,29 +229,8 @@ void LoRaUsbAdapter_E22_400T22U::onReadyRead() {
                 m_recvState.expectedSize = exactSize;
 
                 QByteArray packAck = makeFrame(FrameType::PACKET_ACK, 0, 0);
-                m_serial->write(packAck);
-
-                // Simulate blocking waitForBytesWritten using QEventLoop
-                QEventLoop loop;
-                QTimer timeoutTimer;
-                timeoutTimer.setSingleShot(true);
-                timeoutTimer.setInterval(50); // timeout in ms
-
-                QObject::connect(m_serial.get(), &QCrossPlatformSerialPort::bytesWritten,
-                                 &loop, &QEventLoop::quit, Qt::UniqueConnection);
-                QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, &QEventLoop::quit);
-
-                timeoutTimer.start();
-                loop.exec();
-
-                QObject::disconnect(m_serial.get(), &QCrossPlatformSerialPort::bytesWritten,
-                                    &loop, &QEventLoop::quit);
-
-                if (!timeoutTimer.isActive()) {
-                    // Timeout occurred - log warning but continue
-                    qWarning() << "PACKET_ACK write timeout";
-                }
-                timeoutTimer.stop();
+                // write() is synchronous - no bytesWritten wait needed
+                m_serial->write(packAck.constData(), static_cast<std::size_t>(packAck.size()));
 
                 m_recvState.packetAckSent = true;
 

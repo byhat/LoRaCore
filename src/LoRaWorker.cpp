@@ -2,7 +2,7 @@
 
 LoRaWorker::LoRaWorker(QObject *parent) :
     QObject(parent)
-    , m_serial { new QCrossPlatformSerialPort(this) }
+    , m_serial { std::make_shared<cs::SerialPort>() }
     , m_transport { new LoRaUsbAdapter_E22_400T22U(m_serial, this) }
 {
 }
@@ -17,22 +17,16 @@ void LoRaWorker::openPort(const QString &portName, qint32 baud) {
         return;
     }
 
-    m_serial->setPortName(portName);
+    m_serial->setPortName(portName.toStdString());
     m_serial->setBaudRate(baud);
-    m_serial->setReadBufferSize(32);
-    m_serial->setDataBits(QCrossPlatformDataBits::Data8);
-    m_serial->setParity(QCrossPlatformParity::NoParity);
-    m_serial->setStopBits(QCrossPlatformStopBits::OneStop);
-    m_serial->setFlowControl(QCrossPlatformFlowControl::NoFlowControl);
+    m_serial->setDataBits(cs::DataBits::Data8);
+    m_serial->setParity(cs::Parity::NoParity);
+    m_serial->setStopBits(cs::StopBits::OneStop);
+    m_serial->setFlowControl(cs::FlowControl::NoFlowControl);
 
-    if (!m_serial->open(QIODevice::ReadWrite)) {
-        QString errorMsg;
-        auto err = m_serial->error();
-        if (err != QCrossPlatformSerialPortError::NoError) {
-            errorMsg = QString("Serial port error: %1").arg(static_cast<int>(err));
-        } else {
-            errorMsg = "Failed to open serial port";
-        }
+    if (!m_serial->open(cs::OpenMode::ReadWrite)) {
+        QString errorMsg = QString("Failed to open serial port: %1")
+                               .arg(QString::fromStdString(m_serial->errorString()));
         emit portOpened(false, errorMsg);
         m_serial = nullptr;
         return;

@@ -2,7 +2,7 @@
 
 #include <memory>
 #include <QObject>
-#include "QCrossPlatformSerialPort.hpp"
+#include <cs/SerialPort.hpp>
 #include <QTimer>
 #include <QByteArray>
 #include <QQueue>
@@ -54,14 +54,16 @@ public:
 
     /**
      * @brief Constructor for LoRaUsbAdapter_E22_400T22U
-     * @param serial Shared pointer to the QCrossPlatformSerialPort instance for communication
+     * @param serial Shared pointer to the cs::SerialPort instance for communication
      * @param parent Parent QObject for memory management (default: nullptr)
      * @details Initializes the adapter with the provided serial port.
-     *          Connects the serial port's readyRead signal to onReadyRead slot
-     *          and sets up the timeout timer for retransmission handling.
+     *          Registers the serial port's onReadyRead / onError callbacks
+     *          (they arrive on the library's internal I/O thread and are
+     *          marshalled into this object's thread via queued signals) and
+     *          sets up the timeout timer for retransmission handling.
      * @note If serial is nullptr, a warning is logged and the adapter will not function.
      */
-    explicit LoRaUsbAdapter_E22_400T22U(std::shared_ptr<QCrossPlatformSerialPort> serial,
+    explicit LoRaUsbAdapter_E22_400T22U(std::shared_ptr<cs::SerialPort> serial,
                                         QObject *parent = nullptr);
 
     /**
@@ -92,6 +94,19 @@ public:
     void sendPacket(const QByteArray &data);
 
 signals:
+    /**
+     * @brief Internal: marshals cs::SerialPort onReadyRead (fired on the
+     *        library I/O thread) into this object's thread via a queued
+     *        connection. Not meant for external use.
+     */
+    void serialReadyRead();
+
+    /**
+     * @brief Internal: marshals cs::SerialPort onError into this object's
+     *        thread. Not meant for external use.
+     */
+    void serialErrorOccurred(const QString &msg);
+
     /**
      * @brief Signal emitted when packet transmission completes
      * @param success True if packet was sent successfully, false otherwise
@@ -170,10 +185,10 @@ private:
     int m_sentBytes = 0;
 
     /**
-     * @brief Shared pointer to the QCrossPlatformSerialPort instance
+     * @brief Shared pointer to the cs::SerialPort instance
      * @details Used for all serial communication with the LoRa module.
      */
-    std::shared_ptr<QCrossPlatformSerialPort> m_serial;
+    std::shared_ptr<cs::SerialPort> m_serial;
 
     /**
      * @brief Timer for detecting send timeouts

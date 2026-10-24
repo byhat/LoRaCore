@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include "QCrossPlatformSerialPort.hpp"
+#include <cs/SerialPort.hpp>
 #include "LoRaUsbAdapter_E22_400T22U.hpp"
 
 /**
@@ -118,11 +118,11 @@ signals:
 
 private:
     /**
-     * @brief Shared pointer to the QCrossPlatformSerialPort instance
+     * @brief Shared pointer to the cs::SerialPort instance
      * @details Manages the serial port connection. Set to nullptr when port
      *          is not open or after opening fails.
      */
-    std::shared_ptr<QCrossPlatformSerialPort> m_serial;
+    std::shared_ptr<cs::SerialPort> m_serial;
 
     /**
      * @brief Unique pointer to the LoRa transport layer adapter
