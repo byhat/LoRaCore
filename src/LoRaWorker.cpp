@@ -32,6 +32,11 @@ void LoRaWorker::openPort(const QString &portName, qint32 baud) {
         return;
     }
 
+    // Drop bytes that piled up in the driver while the port was closed
+    // (QSerialPort flushed on open; cs::SerialPort does not). Stale bytes
+    // would desync the frame parser and stall reception until reconnect.
+    m_serial->clear(cs::Directions::AllDirections);
+
 
     connect(m_transport.get(), &LoRaUsbAdapter_E22_400T22U::packetSent,
             this, &LoRaWorker::packetSent);

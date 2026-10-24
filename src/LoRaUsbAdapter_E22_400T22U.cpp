@@ -167,6 +167,13 @@ void LoRaUsbAdapter_E22_400T22U::onReadyRead() {
                 break;
             }
 
+            if (m_recvState.packetAckSent) {
+                // Previous packet was fully delivered; its deferred reset
+                // (2 s) has not fired yet, so start a fresh reassembly now -
+                // otherwise the incoming chunks are swallowed as duplicates.
+                resetReceiveState();
+            }
+
             if (m_recvState.total == 0) {
                 m_recvState.total = total;
                 m_recvState.expectedSize = -1;
